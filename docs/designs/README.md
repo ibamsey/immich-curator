@@ -36,3 +36,4 @@ UX, API integration, and component architecture. Written after use cases, before
 | [DES-003](./DES-003-albums-list-and-share.md) | Albums list + share | Accepted |
 | [DES-004](./DES-004-asset-curation-panel.md) | Asset curation RHS panel | Accepted |
 | [DES-002](./DES-002-curator-identity-admin.md) | Curator operator/target Admin | Accepted |
+| [DES-005](./DES-005-people-catalogue-and-panel.md) | People catalogue + asset panel | Accepted |

@@ -23,6 +23,19 @@ export type ImmichExif = {
   country?: string | null;
 };
 
+export type ImmichPersonSummary = {
+  id: string;
+  name: string;
+  birthDate: string | null;
+  thumbnailPath: string;
+  isHidden: boolean;
+  isFavorite?: boolean;
+  updatedAt?: string;
+};
+
+/** Person record (same fields as Immich person API). */
+export type ImmichPerson = ImmichPersonSummary;
+
 export type ImmichAsset = {
   id: string;
   originalFileName: string;
@@ -35,6 +48,7 @@ export type ImmichAsset = {
   isArchived?: boolean;
   isFavorite?: boolean;
   type?: string;
+  people?: ImmichPersonSummary[];
 };
 
 export type ImmichAlbum = {
@@ -71,4 +85,16 @@ export type ImmichActivity = {
 export type AssetUpdatePayload = {
   description?: string;
   localDateTime?: string;
+};
+
+export type ImmichPeopleResponse = {
+  people: ImmichPerson[];
+  hasNextPage: boolean;
+  total: number;
+  hidden?: number;
+};
+
+export type PersonUpdatePayload = {
+  name?: string;
+  birthDate?: string | null;
 };

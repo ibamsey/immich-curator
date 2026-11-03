@@ -11,7 +11,7 @@
 
 ## Main flow
 
-1. Ian locates the person (from asset faces or People search in curator/Immich).
+1. Ian locates the person in curator **People** ([UC-014](./UC-014-browse-people-in-shared-albums.md)) or Immich People UI.
 2. Ian opens person details and edits **date of birth** (and related fields if in scope).
 3. Curator submits update as Geoff via API.
 4. Ian confirms DOB on person page and on face assignments across albums.

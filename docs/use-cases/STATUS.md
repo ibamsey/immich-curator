@@ -1,6 +1,6 @@
 # Use case sign-off status
 
-Living matrix for UC-001–UC-013. Update when implementation or manual verification completes.
+Living matrix for UC-001–UC-014. Update when implementation or manual verification completes.
 
 | UC | Curator | Ops | Immich UI | Verified | Notes |
 |----|---------|-----|-----------|----------|-------|
@@ -16,5 +16,6 @@ Living matrix for UC-001–UC-013. Update when implementation or manual verifica
 | [UC-010](./UC-010-move-assets-between-albums.md) | — | — | — | | |
 | [UC-012](./UC-012-configure-curator-identity.md) | Yes | Yes | — | 2026-11-03 ✓ | **Signed off:** Admin save/test; operator API key in Admin or env; env overrides file |
 | [UC-013](./UC-013-select-curation-channel.md) | Doc | — | — | | Reference |
+| [UC-014](./UC-014-browse-people-in-shared-albums.md) | Yes (v1) | — | — | 2026-11-04 | Catalogue + panel face wheel, PersonIdentityEditor, Explore deep link |
 
 **Legend:** Curator/Ops/Immich = implemented or operable; **Verified** = sign-off date or initials.

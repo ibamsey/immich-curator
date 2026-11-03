@@ -45,6 +45,6 @@ As **Ian**, I use **Immich** (Geoff has **shared the Poundsgate album** with me)
 ## Traceability
 
 - Related: [US-002](./US-002-split-albums-shared-with-ian.md) (album split as collection grows)
-- Use cases: [UC-001](../use-cases/UC-001-ingest-scanned-photos-poundsgate.md)–[UC-008](../use-cases/UC-008-ian-correct-person-date-of-birth.md), [UC-013](../use-cases/UC-013-select-curation-channel.md) (channel guide)
+- Use cases: [UC-001](../use-cases/UC-001-ingest-scanned-photos-poundsgate.md)–[UC-008](../use-cases/UC-008-ian-correct-person-date-of-birth.md), [UC-014](../use-cases/UC-014-browse-people-in-shared-albums.md), [UC-013](../use-cases/UC-013-select-curation-channel.md) (channel guide)
 - Design: (to be written) `DES-*`
 - ADR: [0001](../adr/0001-server-side-immich-api.md), [0002](../adr/0002-curator-operator-and-target.md) (operator/target config)

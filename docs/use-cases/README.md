@@ -46,6 +46,7 @@ Covers [US-001](../user-stories/US-001-geoff-knows-ian-catalogs.md) and [US-002]
 | [UC-010](./UC-010-move-assets-between-albums.md) | Move assets between albums | immich-curator | Draft |
 | [UC-012](./UC-012-configure-curator-identity.md) | Configure curator operator & target (env + Admin) | env + Admin | Signed off (2026-11-03) |
 | [UC-013](./UC-013-select-curation-channel.md) | Select Immich vs curator channel | reference | Draft |
+| [UC-014](./UC-014-browse-people-in-shared-albums.md) | Browse/edit people in shared albums | immich-curator (People) | Complete (v1) |
 
 ### Flow overview
 
@@ -57,7 +58,9 @@ flowchart LR
   UC004 --> UC005[UC-005 Tags]
   UC004 --> UC006[UC-006 Location]
   UC004 --> UC007[UC-007 Description fix]
-  UC004 --> UC008[UC-008 Person DOB]
+  UC004 --> UC014[UC-014 People catalogue]
+  UC014 --> UC008[UC-008 Person DOB]
+  UC014 --> UC004
   UC004 --> UC009[UC-009 Album CRUD]
   UC009 --> UC010[UC-010 Move assets]
   UC012[UC-012 Env defaults] --> UC009

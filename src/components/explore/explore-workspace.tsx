@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AssetGrid } from "@/components/explore/asset-grid";
 import {
@@ -16,6 +16,7 @@ type ExploreWorkspaceProps = {
   shell: ShellContext;
   album: ImmichAlbum;
   assets: ImmichAsset[];
+  initialSelectedAssetId?: string | null;
   curationConfig: CurationPanelConfig;
 };
 
@@ -23,6 +24,7 @@ export function ExploreWorkspace({
   shell,
   album,
   assets: initialAssets,
+  initialSelectedAssetId = null,
   curationConfig,
 }: ExploreWorkspaceProps) {
   const [assets, setAssets] = useState(initialAssets);
@@ -47,6 +49,13 @@ export function ExploreWorkspace({
         setLoadingDetail(false);
       });
   }, []);
+
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (!initialSelectedAssetId || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    onSelect(initialSelectedAssetId);
+  }, [initialSelectedAssetId, onSelect]);
 
   const onAssetUpdated = useCallback((updated: ImmichAsset) => {
     setDetail(updated);

@@ -49,7 +49,7 @@ Four items (order fixed for muscle memory with Immich “Explore” familiarity)
 | Nav item | Route (suggested) | Main canvas | Typical panel content |
 |----------|-------------------|-------------|------------------------|
 | **Explore** | `/explore` | Asset grid / queue for curation (default landing). Filter: needs tags, missing location, etc. | Asset thumb, Geoff description, tags, location, faces summary, actions: edit tags, set location, fix description, open in Immich (link). |
-| **People** | `/people` | Geoff’s people list (from API as Geoff). Sort/search by name. | Person name, DOB, face count, linked assets preview; action: edit DOB ([UC-008](../../use-cases/UC-008-ian-correct-person-date-of-birth.md)). |
+| **People** | `/people` | Shared-album person catalogue ([UC-014](../../use-cases/UC-014-browse-people-in-shared-albums.md)): face tiles with inline name + DOB. | Asset grid (thumb + description) for selected person; double-click → Explore ([UC-004](../../use-cases/UC-004-browse-album-assets-in-curator.md)). |
 | **Locations** | `/locations` | Map and/or location groups (assets with coords vs missing). | Place label, coords, asset list at pin; action: set location ([UC-006](../../use-cases/UC-006-ian-set-asset-map-location.md)). |
 | **Albums** | `/albums` | **All** Geoff-owned albums from API ([UC-009](../../use-cases/UC-009-album-crud-in-curator.md) Read). List + drill into album grid. | Album title, share status, asset count; actions: create, share with **operator**, edit metadata, move assets ([UC-009](../../use-cases/UC-009-album-crud-in-curator.md), [UC-010](../../use-cases/UC-010-move-assets-between-albums.md)). |
 
@@ -88,7 +88,7 @@ Header is **context-aware**: icons enable/disable based on route and selection. 
 
 **People**
 
-| Action | Edit person / DOB in panel [UC-008](../../use-cases/UC-008-ian-correct-person-date-of-birth.md) |
+| Action | Save name/DOB on catalogue tile [UC-014](../../use-cases/UC-014-browse-people-in-shared-albums.md); open asset in Explore from panel grid |
 
 Exact icon set follows shadcn/lucide conventions in implementation; names here are semantic.
 
@@ -120,8 +120,8 @@ Exact icon set follows shadcn/lucide conventions in implementation; names here a
 
 ### People
 
-- Grid of person avatars (Immich people API).
-- Click person → canvas may show their assets sub-grid or panel-only detail with “view assets” expanding canvas.
+- Grid of person face thumbnails with **name** and **DOB** fields under each tile ([DES-005](../DES-005-people-catalogue-and-panel.md)).
+- Click person → RHS panel shows in-scope assets (shared albums) with descriptions; double-click asset → Explore.
 
 ### Locations
 
@@ -159,7 +159,7 @@ Exact icon set follows shadcn/lucide conventions in implementation; names here a
 | Design area | Use cases |
 |-------------|-----------|
 | Explore + panel | UC-004, UC-005, UC-006, UC-007 |
-| People + panel | UC-008 |
+| People + panel | UC-014, UC-008 |
 | Locations | UC-006 |
 | Albums + header actions | UC-009, UC-010, UC-012 |
 | Channel copy / Immich link | UC-013 |

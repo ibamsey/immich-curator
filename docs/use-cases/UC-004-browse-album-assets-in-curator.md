@@ -19,6 +19,7 @@
 
 ## Alternate flows
 
+- **From People:** Double-click an asset in [UC-014](./UC-014-browse-people-in-shared-albums.md) panel → Explore with `?assetId=` (optional `?albumId=`) and asset selected in RHS curation panel.
 - **Multiple albums:** Ian switches album context (US-002); list scope changes, asset metadata is global per Geoff library.
 - **API failure:** App surfaces error; no key material sent to the client.
 

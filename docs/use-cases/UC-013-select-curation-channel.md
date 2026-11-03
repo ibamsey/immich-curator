@@ -24,7 +24,8 @@ Ian chooses where to perform a task:
 | Tags from description | **immich-curator** (or Immich if allowed) | [UC-005](./UC-005-ian-assign-tags-to-asset.md) |
 | Map location | **immich-curator** (or Immich if allowed) | [UC-006](./UC-006-ian-set-asset-map-location.md) |
 | Fix description typo on Geoff-owned asset | **immich-curator** as Geoff | [UC-007](./UC-007-ian-correct-asset-description.md) |
-| Fix person DOB | **immich-curator** as Geoff (or Geoff UI) | [UC-008](./UC-008-ian-correct-person-date-of-birth.md) |
+| Browse people in shared albums; edit name/DOB | **immich-curator** **People** as Geoff | [UC-014](./UC-014-browse-people-in-shared-albums.md) |
+| Fix person DOB | **immich-curator** **People** ([UC-014](./UC-014-browse-people-in-shared-albums.md)) or Geoff UI | [UC-008](./UC-008-ian-correct-person-date-of-birth.md) |
 | List / create / share Geoff albums | **immich-curator** **Albums** as Geoff | [UC-009](./UC-009-album-crud-in-curator.md) |
 | Move assets between albums | **immich-curator** as Geoff | [UC-010](./UC-010-move-assets-between-albums.md) |
 

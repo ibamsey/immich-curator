@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# immich-curator
 
-## Getting Started
+LAN-oriented sidecar for cataloging Geoff’s Poundsgate album in Immich. Ian uses this UI; the server calls Immich with **Geoff’s API key** (same permissions as Geoff in the web app).
 
-First, run the development server:
+## Why this folder is separate from `../immich`
+
+| `../immich` | `immich-curator` |
+|-------------|----------------------|
+| Docker/Postgres, import scripts, logs, staging | Next.js app only |
+| Shell + Python ops | React + API routes |
+| `.env` for immich-go | `.env.local` for curator (may copy `IMMICH_API_KEY`) |
+
+Keeping the app as a **sibling** avoids file watchers on `logs/`, `postgres/`, and large zips under `immich/`.
+
+## Documentation
+
+Product and engineering docs live in [`docs/`](./docs/README.md): user stories → use cases → designs → ADRs → implementation plans. Agents should read [AGENTS.md](./AGENTS.md) before coding.
+
+## Stack
+
+- Next.js (App Router), React, TypeScript
+- Tailwind CSS v4, shadcn/ui
+
+## Configuration
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
+# Reuse Geoff key from ../immich/.env (IMMICH_API_KEY) if already set
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Immich API docs: [https://docs.immich.app](https://docs.immich.app)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+# IMMICH_API_KEY, IMMICH_SERVER_URL, CURATOR_DEFAULT_ALBUM_ID (or POUNDSGATE_ALBUM_ID)
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000/explore](http://localhost:3000/explore) (root redirects to Explore).
 
-To learn more about Next.js, take a look at the following resources:
+### Always run (systemd on dartmoor)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# One-time: unit is installed under ~/.config/systemd/user/
+systemctl --user enable --now immich-curator
+# After pulling or building app code:
+npm run build && systemctl --user restart immich-curator
+systemctl --user status immich-curator
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Listens on **`0.0.0.0:3000`** (LAN). Restrict via firewall; API key stays **server-side** only.
 
-## Deploy on Vercel
+## Related ops
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Import and scanner workflow remain in [`/home/ian/immich`](../immich) (`import-scanned-photos.sh`, etc.).

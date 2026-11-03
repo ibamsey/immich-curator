@@ -1,0 +1,19 @@
+---
+description: Documentation order and agentic workflow for immich-curator
+alwaysApply: true
+---
+
+# immich-curator documentation workflow
+
+When planning or implementing features in this repo:
+
+1. Start from [docs/README.md](../../docs/README.md).
+2. Ensure traceability: user story → use case → design → ADR (if architectural) → implementation plan → code.
+3. Use naming conventions in docs/README (US-, UC-, DES-, ADR NNNN, IP-YYYY-MM-DD-).
+4. Immich API: server-side only per [docs/adr/0001-server-side-immich-api.md](../../docs/adr/0001-server-side-immich-api.md).
+5. Engineering: [docs/adr/0003-tech-stack-and-engineering-practices.md](../../docs/adr/0003-tech-stack-and-engineering-practices.md)—current stack practices, simplicity, single code paths, token theme, libraries, proportionate TDD.
+6. Do not add Poundsgate migration or Ian-owned-library assumptions unless a new ADR supersedes 0001.
+
+For Next.js specifics, follow the `nextjs-agent-rules` block in [AGENTS.md](../../AGENTS.md).
+
+**Runtime:** On dartmoor, keep **`immich-curator`** user systemd active (`systemctl --user status immich-curator`). After app code changes: `npm run build && systemctl --user restart immich-curator`.

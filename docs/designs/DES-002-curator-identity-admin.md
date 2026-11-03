@@ -1,77 +1,52 @@
 # DES-002: Curator identity and Admin
 
 **Traces to:** [UC-012](../use-cases/UC-012-configure-curator-identity.md), [ADR-0002](../adr/0002-curator-operator-and-target.md)  
-**Status:** Draft
+**Status:** Accepted
 
 ## Goals
 
 - Configure **curator operator** and **curator target** without hard-coded Immich users.
-- Give deployment admin a single place to **verify** identity and connection.
-- Keep **API keys** out of the browser ([ADR-0001](../adr/0001-server-side-immich-api.md)).
+- **Save operator API key** (and optional fields) via Admin for [UC-003](../use-cases/UC-003-ian-curate-in-shared-album-immich.md) comments.
+- Secrets never in browser storage or GET responses ([ADR-0001](../adr/0001-server-side-immich-api.md)).
 
 ## Non-goals
 
-- Curator login / multi-tenant operators (LAN trust for v1).
-- Storing `IMMICH_API_KEY` in Admin UI or client storage.
-- Switching target at runtime without restart.
+- Curator login / multi-tenant admin auth (LAN trust v1).
+- Writing secrets into `.env.local` from the browser.
+- Client-side `NEXT_PUBLIC_*` keys.
 
-## Configuration sources (priority)
+## Configuration sources (precedence: env wins)
 
-| Source | Contents | Editable in Admin UI |
-|--------|----------|----------------------|
-| `.env.local` | `IMMICH_SERVER_URL`, `IMMICH_API_KEY`, operator email/id, optional defaults | No (key); show read-only + doc link |
-| Server config file (optional, gitignored) | Non-secret overrides, operator email | Yes, if implemented |
-| Immich `/api/users/me` | Target display name, email, id | Read-only display |
+| Source | Contents | Admin UI |
+|--------|----------|----------|
+| `process.env` / `.env.local` | Target key, URL, optional operator key | Read-only when set; badge **Set in environment** |
+| `.curator/config.local.json` (gitignored, 600) | Operator key, emails, defaults not in env | Editable when env omits field |
+| Immich `/api/users/me` | Live target/operator profile on test | Read-only |
 
 ## Admin route
 
-- **Path:** `/admin` (linked from sidebar **footer**, not primary curation nav).
-- **Layout:** Same app shell as [floorplan](./user-interface/floorplan.md); main canvas = settings cards; optional RHS panel for help text.
+- **Path:** `/admin` — [`AdminSettingsWorkspace`](../../src/components/admin/admin-settings-workspace.tsx)
+- **API:** `GET/PUT /api/admin/settings`, `POST /api/admin/test-connection`
 
-### Sections
+### Sections (implemented)
 
-1. **Connection**
-   - Immich server URL (masked if sensitive query params).
-   - Status: OK / unreachable / invalid key.
-   - Button: **Test connection** → server route hits Immich health + `/users/me`.
+1. Connection overview + test target / operator / both  
+2. Immich server URL  
+3. Curator target — key (if not env), expected email, profile  
+4. Curator operator — email, **operator API key**, resolved id  
+5. Optional admin API key (user lookup)  
+6. Defaults — album id, share role  
+7. Security note (LAN-only)
 
-2. **Curator target**
-   - Label: “Library owner (API acts as this user)”.
-   - Fields: email, name, user id (from API).
-   - Note: change via new API key in `.env.local` + restart.
-
-3. **Curator operator**
-   - Label: “Collaborator (default album share invitee)”.
-   - Field: email (and optional user id).
-   - v1: read from env; save → write server config or instruct restart with updated env.
-   - Link: [UC-003](../use-cases/UC-003-ian-curate-in-shared-album-immich.md) (operator uses Immich as this user).
-
-4. **Defaults**
-   - Default album id for Explore scope (`CURATOR_DEFAULT_ALBUM_ID`).
-   - Default share role (`CURATOR_DEFAULT_SHARE_ROLE`).
-
-5. **Security note**
-   - Curator is LAN-only; restrict network access; do not expose Admin on the public internet without auth.
-
-## UI copy (examples, not fixed names)
-
-- Sidebar footer: `Target: {targetEmail}` · [Admin]
-- Album share panel: “Share with operator ({operatorEmail})”
-- Empty state if operator unset: “Set CURATOR_OPERATOR_EMAIL in Admin / `.env.local`”
-
-## Server / data flow
+## Server flow
 
 ```
-Browser → GET /api/admin/identity (no secrets)
-       ← { serverUrl, target: UserDto, operatorEmail, defaults, connectionOk }
-
-Browser → POST /api/admin/test-connection
-       ← { ok, targetEmail?, error? }
+Browser → GET /api/admin/settings → sanitized snapshot (no raw keys)
+Browser → PUT /api/admin/settings → merge file → validate keys → reload config
+Browser → POST /api/admin/test-connection → /users/me per actor
+All Immich routes → loadCuratorConfig() (env ?? file)
 ```
-
-Implementation may merge identity into a single bootstrap endpoint used by the shell layout.
 
 ## Open questions
 
-- Persist operator email in gitignored `curator.config.json` vs env-only v1?
-- Require operator Immich user lookup on startup (warn if missing)?
+- Admin auth for non-LAN deployments (future).

@@ -3,21 +3,29 @@
 import { useCallback, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AssetGrid } from "@/components/explore/asset-grid";
-import { AssetDetailPanel } from "@/components/explore/asset-detail-panel";
+import {
+  AssetCurationPanel,
+  type CurationPanelConfig,
+} from "@/components/explore/asset-curation-panel";
 import type { ShellContext } from "@/lib/server/shell-context";
 import type { ImmichAlbum, ImmichAsset } from "@/lib/immich/types";
+
+export type { CurationPanelConfig };
 
 type ExploreWorkspaceProps = {
   shell: ShellContext;
   album: ImmichAlbum;
   assets: ImmichAsset[];
+  curationConfig: CurationPanelConfig;
 };
 
 export function ExploreWorkspace({
   shell,
   album,
-  assets,
+  assets: initialAssets,
+  curationConfig,
 }: ExploreWorkspaceProps) {
+  const [assets, setAssets] = useState(initialAssets);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ImmichAsset | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -40,11 +48,30 @@ export function ExploreWorkspace({
       });
   }, []);
 
+  const onAssetUpdated = useCallback((updated: ImmichAsset) => {
+    setDetail(updated);
+    setAssets((prev) =>
+      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+    );
+  }, []);
+
+  const onAssetDeleted = useCallback((assetId: string) => {
+    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+    setSelectedId(null);
+    setDetail(null);
+    setPanelOpen(false);
+  }, []);
+
   const panelContent = selectedId ? (
-    <AssetDetailPanel
+    <AssetCurationPanel
       assetId={selectedId}
+      albumId={album.id}
       asset={detail}
       loading={loadingDetail}
+      operatorUserId={curationConfig.operatorUserId}
+      operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
+      onAssetUpdated={onAssetUpdated}
+      onAssetDeleted={onAssetDeleted}
     />
   ) : null;
 

@@ -19,7 +19,7 @@
 | Data source | `CURATOR_DEFAULT_ALBUM_ID` or `POUNDSGATE_ALBUM_ID` |
 | Grid | Thumbnails via same-origin `/api/immich/assets/{id}/thumbnail` |
 | Selection | Single select; blue accent ring |
-| Panel | Refetch `GET /api/immich/assets/{id}` on select; show preview, filename, dates, description, tags |
+| Panel | [DES-004](./DES-004-asset-curation-panel.md) `AssetCurationPanel` on select |
 
 ## Server / data flow
 

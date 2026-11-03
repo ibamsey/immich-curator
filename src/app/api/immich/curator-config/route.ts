@@ -1,4 +1,4 @@
-import { getCuratorEnv } from "@/lib/config/env";
+import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 
 export async function GET() {
@@ -9,6 +9,7 @@ export async function GET() {
       operatorEmail: env.operatorEmail ?? null,
       operatorUserId,
       defaultShareRole: env.defaultShareRole,
+      operatorCommentsEnabled: hasOperatorApiKey(),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error";

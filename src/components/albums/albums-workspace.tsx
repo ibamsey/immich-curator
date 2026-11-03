@@ -5,7 +5,10 @@ import { AppShell } from "@/components/shell/app-shell";
 import { AlbumGrid } from "@/components/albums/album-grid";
 import { AlbumsContextPanel } from "@/components/albums/albums-context-panel";
 import { AssetGrid } from "@/components/explore/asset-grid";
-import { AssetDetailPanel } from "@/components/explore/asset-detail-panel";
+import {
+  AssetCurationPanel,
+  type CurationPanelConfig,
+} from "@/components/explore/asset-curation-panel";
 import type { CuratorShareConfig } from "@/components/albums/album-detail-panel";
 import type { ShellContext } from "@/lib/server/shell-context";
 import type { ImmichAlbum, ImmichAsset } from "@/lib/immich/types";
@@ -14,12 +17,14 @@ type AlbumsWorkspaceProps = {
   shell: ShellContext;
   initialAlbums: ImmichAlbum[];
   shareConfig: CuratorShareConfig;
+  curationConfig: CurationPanelConfig;
 };
 
 export function AlbumsWorkspace({
   shell,
   initialAlbums,
   shareConfig,
+  curationConfig,
 }: AlbumsWorkspaceProps) {
   const [albums, setAlbums] = useState(initialAlbums);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,6 +140,20 @@ export function AlbumsWorkspace({
     );
   }, []);
 
+  const onAssetUpdated = useCallback((updated: ImmichAsset) => {
+    setAssetDetail(updated);
+    setExploreAssets((prev) =>
+      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+    );
+  }, []);
+
+  const onAssetDeleted = useCallback((assetId: string) => {
+    setExploreAssets((prev) => prev.filter((a) => a.id !== assetId));
+    setSelectedAssetId(null);
+    setAssetDetail(null);
+    setPanelOpen(false);
+  }, []);
+
   const onSelectAsset = useCallback((assetId: string) => {
     setSelectedAssetId(assetId);
     setPanelOpen(true);
@@ -167,10 +186,15 @@ export function AlbumsWorkspace({
   );
 
   const explorePanelContent = selectedAssetId ? (
-    <AssetDetailPanel
+    <AssetCurationPanel
       assetId={selectedAssetId}
+      albumId={exploreAlbum?.id ?? null}
       asset={assetDetail}
       loading={loadingAssetDetail}
+      operatorUserId={curationConfig.operatorUserId}
+      operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
+      onAssetUpdated={onAssetUpdated}
+      onAssetDeleted={onAssetDeleted}
     />
   ) : null;
 

@@ -32,6 +32,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# Admin-saved secrets (UC-012)
+.curator/config.local.json
+
 # vercel
 .vercel
 

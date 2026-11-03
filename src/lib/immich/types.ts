@@ -55,3 +55,20 @@ export type ImmichSearchAssetsResponse = {
     total: number;
   };
 };
+
+export type ImmichActivityType = "comment" | "like";
+
+export type ImmichActivity = {
+  id: string;
+  createdAt: string;
+  albumId?: string;
+  assetId?: string | null;
+  comment?: string | null;
+  type: ImmichActivityType;
+  user: ImmichUser;
+};
+
+export type AssetUpdatePayload = {
+  description?: string;
+  localDateTime?: string;
+};

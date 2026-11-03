@@ -34,4 +34,5 @@ UX, API integration, and component architecture. Written after use cases, before
 | UI floorplan | [user-interface/floorplan.md](./user-interface/floorplan.md) | Draft |
 | [DES-001](./DES-001-explore-demo-and-theme.md) | Explore demo + theme | Accepted |
 | [DES-003](./DES-003-albums-list-and-share.md) | Albums list + share | Accepted |
-| [DES-002](./DES-002-curator-identity-admin.md) | Curator operator/target Admin | Draft |
+| [DES-004](./DES-004-asset-curation-panel.md) | Asset curation RHS panel | Accepted |
+| [DES-002](./DES-002-curator-identity-admin.md) | Curator operator/target Admin | Accepted |

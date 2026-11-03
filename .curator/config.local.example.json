@@ -1,0 +1,5 @@
+{
+  "immichServerUrl": "http://127.0.0.1:2283",
+  "operatorEmail": "operator@example.com",
+  "defaultShareRole": "editor"
+}

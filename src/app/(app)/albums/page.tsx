@@ -1,5 +1,5 @@
 import { getAllAlbums } from "@/lib/immich/albums";
-import { getCuratorEnv } from "@/lib/config/env";
+import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { AlbumsWorkspace } from "@/components/albums/albums-workspace";
@@ -45,6 +45,10 @@ export default async function AlbumsPage() {
       shell={shell}
       initialAlbums={data.albums}
       shareConfig={data.shareConfig}
+      curationConfig={{
+        operatorUserId: data.shareConfig.operatorUserId,
+        operatorCommentsEnabled: hasOperatorApiKey(),
+      }}
     />
   );
 }

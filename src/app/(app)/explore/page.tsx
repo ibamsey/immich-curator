@@ -1,5 +1,6 @@
-import { getCuratorEnv } from "@/lib/config/env";
+import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
 import { getAlbum, getAlbumAssets } from "@/lib/immich/albums";
+import { resolveOperatorUserId } from "@/lib/immich/users";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { ExploreWorkspace } from "@/components/explore/explore-workspace";
 import { ConfigError } from "@/components/config-error";
@@ -37,7 +38,16 @@ export default async function ExplorePage() {
     return <ConfigError shell={shell} message={data.message} />;
   }
 
+  const operatorUserId = await resolveOperatorUserId();
   return (
-    <ExploreWorkspace shell={shell} album={data.album} assets={data.assets} />
+    <ExploreWorkspace
+      shell={shell}
+      album={data.album}
+      assets={data.assets}
+      curationConfig={{
+        operatorUserId,
+        operatorCommentsEnabled: hasOperatorApiKey(),
+      }}
+    />
   );
 }

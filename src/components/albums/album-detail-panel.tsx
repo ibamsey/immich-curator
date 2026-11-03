@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { assetThumbnailPath } from "@/lib/immich/assets";
+import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
 import type { AlbumShareRole, ImmichAlbum } from "@/lib/immich/types";
 
 export type CuratorShareConfig = {

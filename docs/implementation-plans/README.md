@@ -39,5 +39,7 @@ Create `IP-YYYY-MM-DD-slug.md`:
 |------|---------|--------|
 | [IP-2026-11-03-app-shell-explore-demo.md](./IP-2026-11-03-app-shell-explore-demo.md) | App shell + Explore demo | Done |
 | [IP-2026-11-03-uc009-albums-share.md](./IP-2026-11-03-uc009-albums-share.md) | UC-009 Albums + share | Done |
+| [IP-2026-11-03-uc003-asset-curation.md](./IP-2026-11-03-uc003-asset-curation.md) | UC-003 Asset curation panel | Done |
+| [IP-2026-11-03-uc012-admin-settings.md](./IP-2026-11-03-uc012-admin-settings.md) | UC-012 Admin settings UI | Done |
 
 Suggested first plan: `IP-*-immich-api-client-and-album-list` after UC for album queue exists.

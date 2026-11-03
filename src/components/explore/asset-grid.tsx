@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { assetThumbnailPath } from "@/lib/immich/assets";
+import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
 import type { ImmichAsset } from "@/lib/immich/types";
 
 type AssetGridProps = {

@@ -16,7 +16,10 @@ Ian chooses where to perform a task:
 |------|-------------------|----------|
 | Scan upload to Geoff library + Poundsgate album | dartmoor `import-scanned-photos.sh` | [UC-001](./UC-001-ingest-scanned-photos-poundsgate.md) |
 | Write initial description; name faces | Immich UI as **Geoff** | [UC-002](./UC-002-geoff-edit-description-and-name-faces.md) |
-| View shared album; allowed invitee edits | Immich UI as **Ian** | [UC-003](./UC-003-ian-curate-in-shared-album-immich.md) |
+| View shared album; invitee edits in Immich | Immich UI as **operator** | [UC-003](./UC-003-ian-curate-in-shared-album-immich.md) channel A |
+| Album activity comments on asset | **immich-curator** as **operator** (`IMMICH_OPERATOR_API_KEY`) | [UC-003](./UC-003-ian-curate-in-shared-album-immich.md) channel B |
+| Delete bad scan; edit description/date in panel | **immich-curator** as **target** | [UC-003](./UC-003-ian-curate-in-shared-album-immich.md) channel B, [UC-007](./UC-007-ian-correct-asset-description.md) |
+| Remove from album (park unidentifiable) | **immich-curator** as **target** | [UC-011](./UC-011-remove-from-album-park-unidentifiable.md) |
 | Browse album queue; batch context | **immich-curator** | [UC-004](./UC-004-browse-album-assets-in-curator.md) |
 | Tags from description | **immich-curator** (or Immich if allowed) | [UC-005](./UC-005-ian-assign-tags-to-asset.md) |
 | Map location | **immich-curator** (or Immich if allowed) | [UC-006](./UC-006-ian-set-asset-map-location.md) |

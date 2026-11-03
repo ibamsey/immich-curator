@@ -42,5 +42,7 @@ Create `IP-YYYY-MM-DD-slug.md`:
 | [IP-2026-11-03-uc003-asset-curation.md](./IP-2026-11-03-uc003-asset-curation.md) | UC-003 Asset curation panel | Done |
 | [IP-2026-11-03-uc012-admin-settings.md](./IP-2026-11-03-uc012-admin-settings.md) | UC-012 Admin settings UI | Done |
 | [IP-2026-11-04-uc014-people-workspace.md](./IP-2026-11-04-uc014-people-workspace.md) | UC-014 People workspace | Done |
+| [IP-2026-11-04-uc015-asset-grid-query.md](./IP-2026-11-04-uc015-asset-grid-query.md) | UC-015 Grid query bar | Done |
+| [IP-2026-11-04-computed-physical-size.md](./IP-2026-11-04-computed-physical-size.md) | Computed physical size (ADR-0004) | Done |
 
 Suggested first plan: `IP-*-immich-api-client-and-album-list` after UC for album queue exists.

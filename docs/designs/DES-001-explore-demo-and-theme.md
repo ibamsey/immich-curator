@@ -10,7 +10,7 @@
 
 ## Non-goals
 
-- Metadata editing, filters, pagination UI, non-Explore routes (stubs only).
+- Metadata editing (see DES-004); non-Explore routes except where implemented. Asset grid filter/sort/group: [DES-006](./DES-006-asset-grid-query-bar.md) / UC-015.
 
 ## Explore demo
 

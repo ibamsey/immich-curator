@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AlbumGrid } from "@/components/albums/album-grid";
 import { AlbumsContextPanel } from "@/components/albums/albums-context-panel";
-import { AssetGrid } from "@/components/explore/asset-grid";
+import { QueryableAssetGridSection } from "@/components/grid/queryable-asset-grid-section";
 import {
   AssetCurationPanel,
   type CurationPanelConfig,
 } from "@/components/explore/asset-curation-panel";
 import type { CuratorShareConfig } from "@/components/albums/album-detail-panel";
 import type { ShellContext } from "@/lib/server/shell-context";
-import type { ImmichAlbum, ImmichAsset } from "@/lib/immich/types";
+import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
+import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
 type AlbumsWorkspaceProps = {
   shell: ShellContext;
@@ -35,12 +37,17 @@ export function AlbumsWorkspace({
 
   const [viewMode, setViewMode] = useState<"crud" | "explore">("crud");
   const [exploreAlbum, setExploreAlbum] = useState<ImmichAlbum | null>(null);
-  const [exploreAssets, setExploreAssets] = useState<ImmichAsset[]>([]);
   const [loadingExplore, setLoadingExplore] = useState(false);
   const [exploreError, setExploreError] = useState<string | null>(null);
+  const [explorePhotoTotal, setExplorePhotoTotal] = useState<number | null>(
+    null,
+  );
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
-  const [assetDetail, setAssetDetail] = useState<ImmichAsset | null>(null);
+  const scanDefaultDpi = useScanDefaultDpi();
+  const [assetDetail, setAssetDetail] = useState<ImmichAssetWithEnrichment | null>(
+    null,
+  );
   const [loadingAssetDetail, setLoadingAssetDetail] = useState(false);
 
   const exploreMode = viewMode === "explore";
@@ -75,8 +82,8 @@ export function AlbumsWorkspace({
   const exitExplore = useCallback(() => {
     setViewMode("crud");
     setExploreAlbum(null);
-    setExploreAssets([]);
     setExploreError(null);
+    setExplorePhotoTotal(null);
     setSelectedAssetId(null);
     setAssetDetail(null);
     setPanelOpen(true);
@@ -86,8 +93,7 @@ export function AlbumsWorkspace({
     setViewMode("explore");
     setLoadingExplore(true);
     setExploreError(null);
-    setExploreAlbum(null);
-    setExploreAssets([]);
+    setExplorePhotoTotal(null);
     setSelectedAssetId(null);
     setAssetDetail(null);
     setPanelOpen(false);
@@ -100,21 +106,16 @@ export function AlbumsWorkspace({
       assetCount: 0,
     } as ImmichAlbum);
 
-    Promise.all([
-      fetch(`/api/immich/albums/${albumId}`).then((res) =>
+    fetch(`/api/immich/albums/${albumId}`)
+      .then((res) =>
         res.ok ? res.json() : Promise.reject(new Error("Album not found")),
-      ),
-      fetch(`/api/immich/albums/${albumId}/assets`).then((res) =>
-        res.ok ? res.json() : Promise.reject(new Error("Assets not found")),
-      ),
-    ])
-      .then(([album, assetsPayload]: [ImmichAlbum, { assets: ImmichAsset[] }]) => {
+      )
+      .then((album: ImmichAlbum) => {
         setExploreAlbum(album);
-        setExploreAssets(assetsPayload.assets ?? []);
         setLoadingExplore(false);
       })
       .catch((e: Error) => {
-        setExploreAssets([]);
+        setExploreAlbum(null);
         setExploreError(e.message ?? "Failed to load album");
         setLoadingExplore(false);
       });
@@ -140,15 +141,11 @@ export function AlbumsWorkspace({
     );
   }, []);
 
-  const onAssetUpdated = useCallback((updated: ImmichAsset) => {
+  const onAssetUpdated = useCallback((updated: ImmichAssetWithEnrichment) => {
     setAssetDetail(updated);
-    setExploreAssets((prev) =>
-      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
-    );
   }, []);
 
-  const onAssetDeleted = useCallback((assetId: string) => {
-    setExploreAssets((prev) => prev.filter((a) => a.id !== assetId));
+  const onAssetDeleted = useCallback(() => {
     setSelectedAssetId(null);
     setAssetDetail(null);
     setPanelOpen(false);
@@ -161,8 +158,10 @@ export function AlbumsWorkspace({
     setAssetDetail(null);
     fetch(`/api/immich/assets/${assetId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: ImmichAsset | null) => {
-        setAssetDetail(data);
+      .then((data: ImmichAssetWithEnrichment | null) => {
+        setAssetDetail(
+          data ? normalizeAssetDetail(data as unknown as Record<string, unknown>) : null,
+        );
         setLoadingAssetDetail(false);
       })
       .catch(() => {
@@ -195,6 +194,7 @@ export function AlbumsWorkspace({
       operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
       onAssetUpdated={onAssetUpdated}
       onAssetDeleted={onAssetDeleted}
+      defaultScanDpi={scanDefaultDpi}
     />
   ) : null;
 
@@ -209,7 +209,9 @@ export function AlbumsWorkspace({
       }
       headerSubtitle={
         exploreMode
-          ? `${exploreAssets.length} photos`
+          ? explorePhotoTotal != null
+            ? `${explorePhotoTotal} photos`
+            : "Photos"
           : `${albums.length} on target account`
       }
       panelTitle={exploreMode ? "Photo details" : "Albums"}
@@ -224,15 +226,23 @@ export function AlbumsWorkspace({
           <p className="p-8 text-center text-sm text-destructive">
             {exploreError}
           </p>
-        ) : loadingExplore ? (
+        ) : loadingExplore || !exploreAlbum ? (
           <p className="p-8 text-center text-sm text-muted-foreground">
             Loading photos…
           </p>
         ) : (
-          <AssetGrid
-            assets={exploreAssets}
+          <QueryableAssetGridSection
+            scope={{ mode: "album", albumId: exploreAlbum.id }}
+            storageKey={`albums:${exploreAlbum.id}`}
             selectedId={selectedAssetId}
             onSelect={onSelectAsset}
+            onSelectionLost={() => {
+              setSelectedAssetId(null);
+              setAssetDetail(null);
+              setPanelOpen(false);
+            }}
+            layout="thumb"
+            onTotalChange={setExplorePhotoTotal}
           />
         )
       ) : (

@@ -2,20 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
-import { AssetGrid } from "@/components/explore/asset-grid";
+import { QueryableAssetGridSection } from "@/components/grid/queryable-asset-grid-section";
 import {
   AssetCurationPanel,
   type CurationPanelConfig,
 } from "@/components/explore/asset-curation-panel";
 import type { ShellContext } from "@/lib/server/shell-context";
-import type { ImmichAlbum, ImmichAsset } from "@/lib/immich/types";
+import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
+import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
 export type { CurationPanelConfig };
 
 type ExploreWorkspaceProps = {
   shell: ShellContext;
   album: ImmichAlbum;
-  assets: ImmichAsset[];
+  assets: ImmichAssetWithEnrichment[];
   initialSelectedAssetId?: string | null;
   curationConfig: CurationPanelConfig;
 };
@@ -23,15 +25,15 @@ type ExploreWorkspaceProps = {
 export function ExploreWorkspace({
   shell,
   album,
-  assets: initialAssets,
   initialSelectedAssetId = null,
   curationConfig,
 }: ExploreWorkspaceProps) {
-  const [assets, setAssets] = useState(initialAssets);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<ImmichAsset | null>(null);
+  const scanDefaultDpi = useScanDefaultDpi();
+  const [detail, setDetail] = useState<ImmichAssetWithEnrichment | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [photoTotal, setPhotoTotal] = useState<number | null>(null);
 
   const onSelect = useCallback((assetId: string) => {
     setSelectedId(assetId);
@@ -40,8 +42,10 @@ export function ExploreWorkspace({
     setDetail(null);
     fetch(`/api/immich/assets/${assetId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: ImmichAsset | null) => {
-        setDetail(data);
+      .then((data: ImmichAssetWithEnrichment | null) => {
+        setDetail(
+          data ? normalizeAssetDetail(data as unknown as Record<string, unknown>) : null,
+        );
         setLoadingDetail(false);
       })
       .catch(() => {
@@ -57,15 +61,11 @@ export function ExploreWorkspace({
     onSelect(initialSelectedAssetId);
   }, [initialSelectedAssetId, onSelect]);
 
-  const onAssetUpdated = useCallback((updated: ImmichAsset) => {
+  const onAssetUpdated = useCallback((updated: ImmichAssetWithEnrichment) => {
     setDetail(updated);
-    setAssets((prev) =>
-      prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
-    );
   }, []);
 
-  const onAssetDeleted = useCallback((assetId: string) => {
-    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+  const onAssetDeleted = useCallback(() => {
     setSelectedId(null);
     setDetail(null);
     setPanelOpen(false);
@@ -81,6 +81,7 @@ export function ExploreWorkspace({
       operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
       onAssetUpdated={onAssetUpdated}
       onAssetDeleted={onAssetDeleted}
+      defaultScanDpi={scanDefaultDpi}
     />
   ) : null;
 
@@ -89,16 +90,26 @@ export function ExploreWorkspace({
       targetEmail={shell.targetEmail}
       connectionOk={shell.connectionOk}
       headerTitle={album.albumName}
-      headerSubtitle={`${assets.length} photos`}
+      headerSubtitle={
+        photoTotal != null ? `${photoTotal} photos` : "Photos"
+      }
       panelTitle="Photo details"
       panelOpen={panelOpen}
       onPanelOpenChange={setPanelOpen}
       panelContent={panelContent}
     >
-      <AssetGrid
-        assets={assets}
+      <QueryableAssetGridSection
+        scope={{ mode: "album", albumId: album.id }}
+        storageKey={`explore:${album.id}`}
         selectedId={selectedId}
         onSelect={onSelect}
+        onSelectionLost={() => {
+          setSelectedId(null);
+          setDetail(null);
+          setPanelOpen(false);
+        }}
+        layout="thumb"
+        onTotalChange={setPhotoTotal}
       />
     </AppShell>
   );

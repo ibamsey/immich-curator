@@ -1,5 +1,8 @@
 import { z } from "zod";
+import { loadCuratorConfig } from "@/lib/config/curator-config.server";
 import { deleteAsset, getAsset, updateAsset } from "@/lib/immich/assets";
+import { readImageResolutionFromFile } from "@/lib/immich/read-image-resolution";
+import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
 type Params = { params: Promise<{ assetId: string }> };
 
@@ -12,7 +15,26 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     const { assetId } = await params;
     const asset = await getAsset(assetId);
-    return Response.json(asset);
+    const fileResolution = await readImageResolutionFromFile(
+      assetId,
+      asset.originalPath,
+    );
+
+    const payload: ImmichAssetWithEnrichment = { ...asset };
+    if (fileResolution) {
+      payload.curatorEnrichment = { resolution: fileResolution };
+    } else {
+      const config = loadCuratorConfig();
+      payload.curatorEnrichment = {
+        resolution: {
+          dpiX: config.scanDefaultDpi,
+          dpiY: config.scanDefaultDpi,
+          source: "default",
+        },
+      };
+    }
+
+    return Response.json(payload);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to load asset";
     const status =

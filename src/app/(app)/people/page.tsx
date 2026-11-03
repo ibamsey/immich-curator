@@ -3,7 +3,13 @@ import { resolveOperatorUserId } from "@/lib/immich/users";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { PeopleWorkspace } from "@/components/people/people-workspace";
 
-export default async function PeoplePage() {
+type PageProps = {
+  searchParams: Promise<{ personId?: string }>;
+};
+
+export default async function PeoplePage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const initialPersonId = params.personId?.trim() || null;
   const shell = await loadShellContext();
   let initialPeople: Awaited<
     ReturnType<typeof getPeopleInSharedScope>
@@ -27,6 +33,7 @@ export default async function PeoplePage() {
       initialPeople={initialPeople}
       initialSharedAlbumIds={initialSharedAlbumIds}
       loadError={loadError}
+      initialSelectedPersonId={initialPersonId}
     />
   );
 }

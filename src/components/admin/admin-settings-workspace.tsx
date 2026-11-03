@@ -39,6 +39,12 @@ export function AdminSettingsWorkspace({ initial }: AdminSettingsWorkspaceProps)
   const [defaultShareRole, setDefaultShareRole] = useState(
     initial.defaultShareRole,
   );
+  const [scanDefaultDpi, setScanDefaultDpi] = useState(
+    String(initial.scanDefaultDpi ?? 600),
+  );
+  const [immichLibraryRoot, setImmichLibraryRoot] = useState(
+    initial.immichLibraryRoot ?? "",
+  );
   const [targetApiKey, setTargetApiKey] = useState("");
   const [operatorApiKey, setOperatorApiKey] = useState("");
   const [adminApiKey, setAdminApiKey] = useState("");
@@ -57,6 +63,8 @@ export function AdminSettingsWorkspace({ initial }: AdminSettingsWorkspaceProps)
       setTargetEmail(data.targetEmail ?? "");
       setDefaultAlbumId(data.defaultAlbumId ?? "");
       setDefaultShareRole(data.defaultShareRole ?? "editor");
+      setScanDefaultDpi(String(data.scanDefaultDpi ?? 600));
+      setImmichLibraryRoot(data.immichLibraryRoot ?? "");
     }
   }, []);
 
@@ -65,9 +73,16 @@ export function AdminSettingsWorkspace({ initial }: AdminSettingsWorkspaceProps)
     setError(null);
     setMessage(null);
     try {
-      const body: Record<string, string | undefined> = {
+      const body: Record<string, string | number | undefined> = {
         defaultShareRole,
       };
+      if (!fieldLocked(settings.sources.scanDefaultDpi)) {
+        const dpi = Number.parseInt(scanDefaultDpi, 10);
+        if (Number.isFinite(dpi) && dpi > 0) body.scanDefaultDpi = dpi;
+      }
+      if (!fieldLocked(settings.sources.immichLibraryRoot)) {
+        body.immichLibraryRoot = immichLibraryRoot;
+      }
       if (!fieldLocked(settings.sources.immichServerUrl)) {
         body.immichServerUrl = immichServerUrl || undefined;
       }
@@ -360,6 +375,38 @@ export function AdminSettingsWorkspace({ initial }: AdminSettingsWorkspaceProps)
             <option value="editor">Editor</option>
             <option value="viewer">Viewer</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="flex items-center gap-2 text-muted-foreground">
+            Default scan DPI (physical size fallback)
+            <EnvBadge source={settings.sources.scanDefaultDpi} />
+          </span>
+          <input
+            type="number"
+            min={1}
+            max={9600}
+            value={scanDefaultDpi}
+            disabled={fieldLocked(settings.sources.scanDefaultDpi)}
+            onChange={(e) => setScanDefaultDpi(e.target.value)}
+            className="rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs disabled:opacity-60"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="flex items-center gap-2 text-muted-foreground">
+            Immich library root (host path, for exiftool DPI)
+            <EnvBadge source={settings.sources.immichLibraryRoot} />
+          </span>
+          <input
+            value={immichLibraryRoot}
+            disabled={fieldLocked(settings.sources.immichLibraryRoot)}
+            onChange={(e) => setImmichLibraryRoot(e.target.value)}
+            placeholder="/path/to/immich/library"
+            className="rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs disabled:opacity-60"
+          />
+          <span className="text-[11px] text-muted-foreground">
+            Maps Immich <code>/data/library/…</code> paths for read-only exiftool
+            on asset detail. Requires exiftool on this host.
+          </span>
         </label>
       </section>
 

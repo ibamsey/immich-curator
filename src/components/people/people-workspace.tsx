@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PersonCatalogGrid } from "@/components/people/person-catalog-grid";
@@ -13,6 +13,7 @@ type PeopleWorkspaceProps = {
   initialPeople: ImmichPerson[];
   initialSharedAlbumIds: string[];
   loadError: string | null;
+  initialSelectedPersonId?: string | null;
 };
 
 export function PeopleWorkspace({
@@ -20,6 +21,7 @@ export function PeopleWorkspace({
   initialPeople,
   initialSharedAlbumIds,
   loadError,
+  initialSelectedPersonId = null,
 }: PeopleWorkspaceProps) {
   const router = useRouter();
   const [people, setPeople] = useState(initialPeople);
@@ -65,6 +67,16 @@ export function PeopleWorkspace({
     },
     [loadPersonAssets],
   );
+
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (!initialSelectedPersonId || deepLinkHandled.current || loadError) return;
+    if (!people.some((p) => p.id === initialSelectedPersonId)) return;
+    deepLinkHandled.current = true;
+    startTransition(() => {
+      onSelect(initialSelectedPersonId);
+    });
+  }, [initialSelectedPersonId, loadError, onSelect, people]);
 
   const onPersonUpdated = useCallback((updated: ImmichPerson) => {
     setPeople((prev) =>

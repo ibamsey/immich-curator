@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { DEFAULT_SCAN_DPI } from "@/lib/assets/compute-context";
 import {
   shareRoleSchema,
   type AlbumShareRole,
@@ -18,6 +19,8 @@ export type CuratorEnv = {
   operatorUserId: string | undefined;
   targetEmail: string | undefined;
   defaultShareRole: AlbumShareRole;
+  scanDefaultDpi: number;
+  immichLibraryRoot: string | undefined;
 };
 
 const mergedConfigSchema = z.object({
@@ -30,6 +33,8 @@ const mergedConfigSchema = z.object({
   operatorUserId: z.string().uuid().optional(),
   targetEmail: z.string().email().optional(),
   defaultShareRole: shareRoleSchema.optional(),
+  scanDefaultDpi: z.number().int().min(1).max(9600).optional(),
+  immichLibraryRoot: z.string().min(1).optional(),
 });
 
 function envString(key: string): string | undefined {
@@ -84,6 +89,14 @@ export function getConfigSources(): ConfigSources {
       envString("CURATOR_DEFAULT_SHARE_ROLE"),
       file.defaultShareRole,
     ),
+    scanDefaultDpi: sourceOf(
+      envString("CURATOR_SCAN_DEFAULT_DPI"),
+      file.scanDefaultDpi != null ? String(file.scanDefaultDpi) : undefined,
+    ),
+    immichLibraryRoot: sourceOf(
+      envString("IMMICH_LIBRARY_ROOT"),
+      file.immichLibraryRoot,
+    ),
   };
 }
 
@@ -108,6 +121,15 @@ export function loadCuratorConfig(): CuratorEnv {
   const defaultShareRole =
     (envString("CURATOR_DEFAULT_SHARE_ROLE") as AlbumShareRole | undefined) ??
     file.defaultShareRole;
+  const scanDefaultDpiRaw =
+    envString("CURATOR_SCAN_DEFAULT_DPI") ??
+    (file.scanDefaultDpi != null ? String(file.scanDefaultDpi) : undefined);
+  const scanDefaultDpi = scanDefaultDpiRaw
+    ? Number.parseInt(scanDefaultDpiRaw, 10)
+    : DEFAULT_SCAN_DPI;
+  const immichLibraryRootRaw =
+    envString("IMMICH_LIBRARY_ROOT") ?? file.immichLibraryRoot;
+  const immichLibraryRoot = immichLibraryRootRaw?.trim() || undefined;
 
   const parsed = mergedConfigSchema.safeParse({
     immichServerUrl,
@@ -119,6 +141,10 @@ export function loadCuratorConfig(): CuratorEnv {
     operatorUserId,
     targetEmail,
     defaultShareRole,
+    scanDefaultDpi: Number.isFinite(scanDefaultDpi)
+      ? scanDefaultDpi
+      : DEFAULT_SCAN_DPI,
+    immichLibraryRoot,
   });
 
   if (!parsed.success) {
@@ -139,6 +165,8 @@ export function loadCuratorConfig(): CuratorEnv {
     operatorUserId: data.operatorUserId,
     targetEmail: data.targetEmail,
     defaultShareRole: data.defaultShareRole ?? "editor",
+    scanDefaultDpi: data.scanDefaultDpi ?? DEFAULT_SCAN_DPI,
+    immichLibraryRoot: data.immichLibraryRoot,
   };
 }
 

@@ -13,6 +13,8 @@ export const localConfigFileSchema = z.object({
   targetEmail: z.string().email().optional(),
   defaultAlbumId: z.string().uuid().optional(),
   defaultShareRole: shareRoleSchema.optional(),
+  scanDefaultDpi: z.number().int().min(1).max(9600).optional(),
+  immichLibraryRoot: z.string().min(1).optional(),
 });
 
 export type LocalConfigFile = z.infer<typeof localConfigFileSchema>;
@@ -28,6 +30,8 @@ export const adminSettingsPutSchema = z.object({
   targetEmail: z.string().email().optional().or(z.literal("")),
   defaultAlbumId: z.string().uuid().optional().or(z.literal("")),
   defaultShareRole: shareRoleSchema.optional(),
+  scanDefaultDpi: z.number().int().min(1).max(9600).optional(),
+  immichLibraryRoot: z.string().optional().or(z.literal("")),
   clearTargetApiKey: z.boolean().optional(),
   clearOperatorApiKey: z.boolean().optional(),
   clearAdminApiKey: z.boolean().optional(),
@@ -51,4 +55,6 @@ export type ConfigSources = {
   targetEmail: ConfigFieldSource | "unset";
   defaultAlbumId: ConfigFieldSource | "unset";
   defaultShareRole: ConfigFieldSource | "unset";
+  scanDefaultDpi: ConfigFieldSource | "unset";
+  immichLibraryRoot: ConfigFieldSource | "unset";
 };

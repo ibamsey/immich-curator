@@ -2,11 +2,14 @@ import { ImmichApiError, immichFetchTarget, immichJsonTarget } from "@/lib/immic
 import type {
   AssetUpdatePayload,
   ImmichAsset,
+  ImmichAssetWithEnrichment,
   ImmichUser,
 } from "@/lib/immich/types";
 
-export async function getAsset(assetId: string): Promise<ImmichAsset> {
-  return immichJsonTarget<ImmichAsset>(`/api/assets/${assetId}`);
+export async function getAsset(
+  assetId: string,
+): Promise<ImmichAssetWithEnrichment> {
+  return immichJsonTarget<ImmichAssetWithEnrichment>(`/api/assets/${assetId}`);
 }
 
 export async function updateAsset(

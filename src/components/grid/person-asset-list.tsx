@@ -2,14 +2,15 @@
 
 import { cn } from "@/lib/utils";
 import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
-import type { ImmichAsset } from "@/lib/immich/types";
+import { formatPhysicalSizeSummary } from "@/components/assets/asset-metadata-fields";
+import type { GridAsset } from "@/lib/assets/grid-asset";
 
-type PersonAssetGridProps = {
-  assets: ImmichAsset[];
-  sharedAlbumIds: string[];
-  selectedAssetId: string | null;
-  onSelectAsset: (assetId: string) => void;
-  onOpenInExplore: (assetId: string, albumId: string | null) => void;
+type PersonAssetListProps = {
+  assets: GridAsset[];
+  selectedId: string | null;
+  onSelect: (assetId: string) => void;
+  onOpenInExplore?: (assetId: string) => void;
+  scanDefaultDpi?: number;
 };
 
 function descriptionSnippet(description: string | undefined, max = 120): string {
@@ -19,23 +20,13 @@ function descriptionSnippet(description: string | undefined, max = 120): string 
   return `${text.slice(0, max)}…`;
 }
 
-export function PersonAssetGrid({
+export function PersonAssetList({
   assets,
-  sharedAlbumIds,
-  selectedAssetId,
-  onSelectAsset,
+  selectedId,
+  onSelect,
   onOpenInExplore,
-}: PersonAssetGridProps) {
-  const defaultAlbumId = sharedAlbumIds[0] ?? null;
-
-  if (assets.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No photos for this person in shared albums.
-      </p>
-    );
-  }
-
+  scanDefaultDpi = 600,
+}: PersonAssetListProps) {
   return (
     <div
       className="grid grid-cols-1 gap-2 sm:grid-cols-2"
@@ -43,16 +34,17 @@ export function PersonAssetGrid({
       aria-label="Photos with this person"
     >
       {assets.map((asset) => {
-        const selected = asset.id === selectedAssetId;
+        const selected = asset.id === selectedId;
+        const physicalSummary = formatPhysicalSizeSummary(asset, scanDefaultDpi);
         return (
           <button
             key={asset.id}
             type="button"
             role="listitem"
-            onClick={() => onSelectAsset(asset.id)}
+            onClick={() => onSelect(asset.id)}
             onDoubleClick={(e) => {
               e.preventDefault();
-              onOpenInExplore(asset.id, defaultAlbumId);
+              onOpenInExplore?.(asset.id);
             }}
             className={cn(
               "flex gap-2 rounded-md border border-border bg-card p-2 text-left outline-none",
@@ -71,9 +63,12 @@ export function PersonAssetGrid({
                 className="size-full object-cover"
               />
             </div>
-            <p className="line-clamp-3 min-w-0 flex-1 text-xs text-muted-foreground">
-              {descriptionSnippet(asset.description)}
-            </p>
+            <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+              <p className="line-clamp-2">{descriptionSnippet(asset.description)}</p>
+              {physicalSummary ? (
+                <p className="mt-0.5 line-clamp-1 text-[11px]">{physicalSummary}</p>
+              ) : null}
+            </div>
           </button>
         );
       })}

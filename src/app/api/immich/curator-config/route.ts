@@ -9,6 +9,7 @@ export async function GET() {
       operatorEmail: env.operatorEmail ?? null,
       operatorUserId,
       defaultShareRole: env.defaultShareRole,
+      scanDefaultDpi: env.scanDefaultDpi,
       operatorCommentsEnabled: hasOperatorApiKey(),
     });
   } catch (e) {

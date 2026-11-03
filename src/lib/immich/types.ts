@@ -19,8 +19,32 @@ export type ImmichTag = {
 export type ImmichExif = {
   imageWidth?: number;
   imageHeight?: number;
+  exifImageWidth?: number;
+  exifImageHeight?: number;
   city?: string | null;
+  state?: string | null;
   country?: string | null;
+  description?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  make?: string | null;
+  model?: string | null;
+  lensModel?: string | null;
+  dateTimeOriginal?: string | null;
+  modifyDate?: string | null;
+  iso?: number | null;
+  fNumber?: number | null;
+  focalLength?: number | null;
+  exposureTime?: string | null;
+  orientation?: string | null;
+};
+
+export type CuratorAssetEnrichment = {
+  resolution?: {
+    dpiX: number;
+    dpiY: number;
+    source: "exif" | "default";
+  };
 };
 
 export type ImmichPersonSummary = {
@@ -36,6 +60,18 @@ export type ImmichPersonSummary = {
 /** Person record (same fields as Immich person API). */
 export type ImmichPerson = ImmichPersonSummary;
 
+export type ImmichAssetFace = {
+  id: string;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+  imageWidth: number;
+  imageHeight: number;
+  sourceType?: string;
+  person: ImmichPerson | null;
+};
+
 export type ImmichAsset = {
   id: string;
   originalFileName: string;
@@ -49,6 +85,13 @@ export type ImmichAsset = {
   isFavorite?: boolean;
   type?: string;
   people?: ImmichPersonSummary[];
+};
+
+export type ImmichAssetWithEnrichment = ImmichAsset & {
+  curatorEnrichment?: CuratorAssetEnrichment;
+  originalPath?: string;
+  width?: number;
+  height?: number;
 };
 
 export type ImmichAlbum = {

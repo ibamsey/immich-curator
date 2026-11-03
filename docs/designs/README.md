@@ -37,3 +37,4 @@ UX, API integration, and component architecture. Written after use cases, before
 | [DES-004](./DES-004-asset-curation-panel.md) | Asset curation RHS panel | Accepted |
 | [DES-002](./DES-002-curator-identity-admin.md) | Curator operator/target Admin | Accepted |
 | [DES-005](./DES-005-people-catalogue-and-panel.md) | People catalogue + asset panel | Accepted |
+| [DES-006](./DES-006-asset-grid-query-bar.md) | Asset grid filter/sort/group | Accepted |

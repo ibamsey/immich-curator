@@ -9,6 +9,7 @@ Durable decisions for immich-curator. Format inspired by [Michael Nygard’s ADR
 | [0001](./0001-server-side-immich-api.md) | Server-side Immich API | Accepted |
 | [0002](./0002-curator-operator-and-target.md) | Curator operator and target (configurable users) | Accepted |
 | [0003](./0003-tech-stack-and-engineering-practices.md) | Tech stack and engineering practices (agents) | Accepted |
+| [0004](./0004-computed-asset-metadata-fields.md) | Computed asset metadata fields | Accepted |
 | [0000](./0000-template.md) | ADR template | — |
 
 ## Workflow

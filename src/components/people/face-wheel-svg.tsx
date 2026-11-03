@@ -1,6 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  cancelSingleClick,
+  scheduleSingleClick,
+} from "@/lib/people/face-click-timing";
 import { personThumbnailPath } from "@/lib/immich/person-thumbnail-path";
 import {
   CENTER,
@@ -35,6 +39,7 @@ export function FaceWheelSvg({
   onSwitchContextPerson,
 }: FaceWheelSvgProps) {
   const [rotationRad, setRotationRad] = useState(0);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metrics = useMemo(
     () => computeWheelMetrics(spokes.length, rotationRad),
     [spokes.length, rotationRad],
@@ -141,9 +146,13 @@ export function FaceWheelSvg({
               <g
                 transform={`translate(${spoke.x} ${spoke.y})`}
                 className="cursor-pointer"
-                onClick={() => snapToSpoke(i)}
+                onClick={() => {
+                  scheduleSingleClick(clickTimerRef, () => snapToSpoke(i));
+                }}
                 onDoubleClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
+                  cancelSingleClick(clickTimerRef);
                   onSwitchContextPerson(person.id);
                 }}
               >

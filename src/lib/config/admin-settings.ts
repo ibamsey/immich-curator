@@ -21,6 +21,8 @@ export type SanitizedAdminSettings = {
   targetEmail: string | null;
   defaultAlbumId: string | null;
   defaultShareRole: string;
+  scanDefaultDpi: number;
+  immichLibraryRoot: string | null;
   keysConfigured: {
     target: boolean;
     operator: boolean;
@@ -121,6 +123,8 @@ export async function buildSanitizedAdminSettings(): Promise<SanitizedAdminSetti
     targetEmail: env?.targetEmail ?? null,
     defaultAlbumId: env?.defaultAlbumId ?? null,
     defaultShareRole: env?.defaultShareRole ?? "editor",
+    scanDefaultDpi: env?.scanDefaultDpi ?? 600,
+    immichLibraryRoot: env?.immichLibraryRoot ?? null,
     keysConfigured: {
       target: Boolean(env?.apiKey),
       operator: Boolean(env?.operatorApiKey),
@@ -224,6 +228,23 @@ function applyPutToFile(
     sources.defaultShareRole !== "both"
   ) {
     next.defaultShareRole = body.defaultShareRole;
+  }
+
+  if (
+    body.scanDefaultDpi !== undefined &&
+    sources.scanDefaultDpi !== "env" &&
+    sources.scanDefaultDpi !== "both"
+  ) {
+    next.scanDefaultDpi = body.scanDefaultDpi;
+  }
+
+  if (
+    body.immichLibraryRoot !== undefined &&
+    sources.immichLibraryRoot !== "env" &&
+    sources.immichLibraryRoot !== "both"
+  ) {
+    if (body.immichLibraryRoot === "") delete next.immichLibraryRoot;
+    else next.immichLibraryRoot = body.immichLibraryRoot.trim();
   }
 
   return next;

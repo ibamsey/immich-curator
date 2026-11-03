@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { personThumbnailPath } from "@/lib/immich/person-thumbnail-path";
 import { PersonIdentityEditor } from "@/components/people/person-identity-editor";
@@ -25,9 +26,10 @@ function PersonCatalogTile({
 }) {
   return (
     <div
+      id={`person-catalog-${person.id}`}
       role="listitem"
       className={cn(
-        "flex flex-col overflow-hidden rounded-md border border-border bg-card",
+        "flex flex-col overflow-hidden rounded-md border border-border bg-card scroll-mt-3",
         selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
     >
@@ -62,6 +64,12 @@ export function PersonCatalogGrid({
   onSelect,
   onPersonUpdated,
 }: PersonCatalogGridProps) {
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = document.getElementById(`person-catalog-${selectedId}`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [selectedId]);
+
   if (people.length === 0) {
     return (
       <p className="p-8 text-center text-sm text-muted-foreground">

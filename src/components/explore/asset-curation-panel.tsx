@@ -4,8 +4,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AssetActivityComments } from "@/components/explore/asset-activity-comments";
-import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
-import type { ImmichAsset } from "@/lib/immich/types";
+import { AssetPreviewWithFaces } from "@/components/explore/asset-preview-with-faces";
+import { AssetMetadataFields } from "@/components/assets/asset-metadata-fields";
+import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
 export type CurationPanelConfig = {
   operatorUserId: string | null;
@@ -15,24 +17,14 @@ export type CurationPanelConfig = {
 export type AssetCurationPanelProps = {
   assetId: string;
   albumId: string | null;
-  asset: ImmichAsset | null;
+  asset: ImmichAssetWithEnrichment | null;
+  defaultScanDpi?: number;
   loading: boolean;
   operatorUserId: string | null;
   operatorCommentsEnabled: boolean;
-  onAssetUpdated: (asset: ImmichAsset) => void;
+  onAssetUpdated: (asset: ImmichAssetWithEnrichment) => void;
   onAssetDeleted: (assetId: string) => void;
 };
-
-function formatDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 function toDatetimeLocalValue(iso: string): string {
   try {
@@ -48,23 +40,6 @@ function fromDatetimeLocalValue(value: string): string {
   return new Date(value).toISOString();
 }
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <div className="text-sm text-foreground">{value}</div>
-    </div>
-  );
-}
-
 export function AssetCurationPanel({
   assetId,
   albumId,
@@ -74,6 +49,7 @@ export function AssetCurationPanel({
   operatorCommentsEnabled,
   onAssetUpdated,
   onAssetDeleted,
+  defaultScanDpi = 600,
 }: AssetCurationPanelProps) {
   if (loading) {
     return (
@@ -87,32 +63,29 @@ export function AssetCurationPanel({
     );
   }
 
-  const tags = asset.tags?.map((t) => t.name).join(", ") || "—";
-  const w = asset.exifInfo?.imageWidth;
-  const h = asset.exifInfo?.imageHeight;
-  const dimensions = w && h ? `${w} × ${h}` : "—";
-
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-md bg-muted">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={assetThumbnailPath(assetId, "preview")}
-          alt={asset.originalFileName}
-          className="max-h-64 w-full object-contain"
-        />
-      </div>
-      <Field label="File name" value={asset.originalFileName} />
+      <AssetPreviewWithFaces
+        assetId={assetId}
+        alt={asset.originalFileName}
+      />
       <AssetMetadataEditor
         key={asset.id}
         assetId={assetId}
         asset={asset}
         onAssetUpdated={onAssetUpdated}
       />
-      <Field label="Tags" value={tags} />
-      <Field label="Dimensions" value={dimensions} />
-      <Field label="File created" value={formatDate(asset.fileCreatedAt)} />
-      <Field label="Asset ID" value={<code className="text-xs">{assetId}</code>} />
+      <AssetMetadataFields
+        asset={asset}
+        enrichment={asset.curatorEnrichment}
+        defaultScanDpi={defaultScanDpi}
+      />
+      <div className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Asset ID
+        </p>
+        <code className="text-xs">{assetId}</code>
+      </div>
       <AssetDeleteActions assetId={assetId} onAssetDeleted={onAssetDeleted} />
       {albumId ? (
         <AssetActivityComments
@@ -137,8 +110,8 @@ function AssetMetadataEditor({
   onAssetUpdated,
 }: {
   assetId: string;
-  asset: ImmichAsset;
-  onAssetUpdated: (asset: ImmichAsset) => void;
+  asset: ImmichAssetWithEnrichment;
+  onAssetUpdated: (asset: ImmichAssetWithEnrichment) => void;
 }) {
   const [description, setDescription] = useState(asset.description ?? "");
   const [capturedLocal, setCapturedLocal] = useState(
@@ -175,7 +148,13 @@ function AssetMetadataEditor({
         setMetaMessage(data.error ?? "Save failed");
         return;
       }
-      onAssetUpdated(data as ImmichAsset);
+      const refetch = await fetch(`/api/immich/assets/${assetId}`);
+      const enriched = refetch.ok
+        ? normalizeAssetDetail(
+            (await refetch.json()) as Record<string, unknown>,
+          )
+        : normalizeAssetDetail(data as Record<string, unknown>);
+      onAssetUpdated(enriched);
       setMetaMessage("Saved.");
     } catch {
       setMetaMessage("Save failed");

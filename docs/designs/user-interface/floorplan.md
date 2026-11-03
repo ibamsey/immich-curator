@@ -66,7 +66,7 @@ Header is **context-aware**: icons enable/disable based on route and selection. 
 | Icon / control | Behaviour |
 |----------------|-----------|
 | Album scope dropdown | Limits Explore / Locations to one Geoff album or “all albums” (list from [UC-009](../../use-cases/UC-009-album-crud-in-curator.md)). |
-| Search / filter | Text search; quick filters (untagged, no location). |
+| Asset grid query bar | Sort, filter, group on main photo grids ([UC-015](../../use-cases/UC-015-filter-sort-group-asset-grids.md), [DES-006](../DES-006-asset-grid-query-bar.md)). |
 | Panel toggle | Show/hide RHS panel; remembers width preference locally. |
 
 **Explore (asset selected)**

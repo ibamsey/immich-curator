@@ -1,0 +1,28 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { assignFaceToPerson, nameUnassignedFace } from "@/lib/immich/faces";
+
+type Params = { params: Promise<{ faceId: string }> };
+
+const bodySchema = z.union([
+  z.object({ personId: z.string().uuid() }),
+  z.object({ name: z.string().min(1) }),
+]);
+
+export async function PUT(request: Request, { params }: Params) {
+  try {
+    const { faceId } = await params;
+    const body = bodySchema.parse(await request.json());
+    const person =
+      "personId" in body
+        ? await assignFaceToPerson(faceId, body.personId)
+        : await nameUnassignedFace(faceId, body.name.trim());
+    return NextResponse.json(person);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return NextResponse.json({ message: e.message }, { status: 400 });
+    }
+    const message = e instanceof Error ? e.message : "Failed to name face";
+    return NextResponse.json({ message }, { status: 502 });
+  }
+}

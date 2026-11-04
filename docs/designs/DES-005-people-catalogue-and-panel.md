@@ -19,8 +19,10 @@
 
 | Region | Content |
 |--------|---------|
-| Main canvas | Person tiles using shared **PersonIdentityEditor** (face thumb, name, DOB `dd/mm/yyyy` + calendar icon) |
-| RHS panel | Asset grid (single-click select); below grid: **face wheel** or sole **PersonIdentityEditor**; double-click asset → Explore |
+| Main canvas | Two tabs. **People:** named persons only. **Faces:** unnamed cluster persons, then detections that have no person. Named tiles use **PersonIdentityEditor** (face thumb, name, DOB `dd/mm/yyyy`). Detection tiles are a square crop of the source photo plus a name field. |
+| RHS panel | A selected person: asset grid (single-click select); below grid: **face wheel** or sole **PersonIdentityEditor**. A selected detection: that one photo and a name field. Double-click a photo → Explore. |
+
+Giving a person or a detection a name moves that record onto **People** and selects it. Clearing a name moves the person back to **Faces**. Naming a detection creates one person for that face. Similar detections stay on **Faces** until Immich clusters them. A name that matches an existing person offers the same merge check as the person editor; merging assigns the face to that person instead of creating another.
 
 Interaction matches Albums/Explore: selection opens panel; Esc/backdrop closes panel per shell.
 
@@ -41,6 +43,11 @@ sequenceDiagram
   end
   API-->>UI: filtered people list
 
+  UI->>API: GET /api/immich/faces/unassigned
+  API->>Lib: all assets in shared albums
+  API->>Immich: GET /api/faces per asset
+  API-->>UI: faces whose person is null
+
   UI->>API: GET /api/immich/people/id/assets
   API->>Immich: POST /api/search/metadata personIds albumIds
   API-->>UI: assets with description
@@ -58,6 +65,7 @@ sequenceDiagram
 ### Thumbnails
 
 - Person face: `GET /api/immich/people/{id}/thumbnail` → proxy Immich person thumbnail.
+- Unassigned detection: asset thumbnail, cropped to the face box.
 - Assets: existing asset thumbnail proxy.
 
 ### Explore handoff
@@ -74,16 +82,20 @@ After **single-click** on an asset, `GET /api/immich/assets/{id}` supplies `peop
 | One face (or only context person) | `PersonIdentityEditor` only |
 | Context + other faces | SVG **FaceWheelSvg**: context at hub; other faces on rotatable spokes with top focus gap; scroll wheel rotates; click snaps spoke to top; editor below tracks top spoke after engage |
 
-- **Double-click** spoke → change main catalogue selection (`onSwitchContextPerson`).
+- **Double-click** spoke → change main catalogue selection (`onSwitchContextPerson`) and open the tab that holds that person.
+- The wheel lists people on the photo. It does not list detections that have no person.
 - Layout math: [`face-wheel-layout.ts`](../../src/lib/people/face-wheel-layout.ts).
 
 ## Client components
 
 | Component | Role |
 |-----------|------|
-| `people-workspace.tsx` | Shell, selection, save state |
+| `people-workspace.tsx` | Shell, People/Faces tabs, selection, move-on-name |
 | `person-identity-editor.tsx` | Shared name/DOB Save (catalog + panel) |
-| `person-catalog-grid.tsx` | Catalogue tiles |
+| `person-catalog-grid.tsx` | Named and cluster tiles |
+| `faces-catalog.tsx` | Faces tab: clusters, then unidentified detections |
+| `detection-name-field.tsx` | Name a detection; merge check before create |
+| `detection-context-panel.tsx` | One photo and a name field |
 | `person-context-panel.tsx` | Panel + asset selection |
 | `person-asset-grid.tsx` | Single-click select; double-click → Explore |
 | `asset-faces-section.tsx` | Fetch asset people; wheel vs sole editor |

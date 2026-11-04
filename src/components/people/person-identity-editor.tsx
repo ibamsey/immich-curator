@@ -5,6 +5,9 @@ import { Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { personThumbnailPath } from "@/lib/immich/person-thumbnail-path";
 import { normalizePersonName } from "@/lib/people/person-name-format";
+import { fetchMergeSuggestionIfNeeded } from "@/lib/people/person-name-merge-check";
+import { PersonMergeSuggestionPanel } from "@/components/people/person-merge-suggestion";
+import type { PersonMergeSuggestionRequest } from "@/lib/people/person-name-merge-check";
 import {
   DobInput,
   displayDateToIso,
@@ -19,7 +22,9 @@ type PersonIdentityEditorProps = {
   person: ImmichPerson;
   variant?: "catalog" | "panel";
   showFaceThumb?: boolean;
+  cataloguePeople?: ImmichPerson[];
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
 };
 
 type RowState = {
@@ -30,13 +35,16 @@ type RowState = {
   error: string | null;
 };
 
-const AUTOSAVE_MS = 700;
+const NAME_COMMIT_MS = 700;
+const DOB_AUTOSAVE_MS = 700;
 
 export function PersonIdentityEditor({
   person,
   variant = "panel",
   showFaceThumb = variant === "panel",
+  cataloguePeople = [],
   onPersonUpdated,
+  onPersonMerged,
 }: PersonIdentityEditorProps) {
   const [state, setState] = useState<RowState>(() => ({
     name: person.name ?? "",
@@ -45,8 +53,19 @@ export function PersonIdentityEditor({
     saving: false,
     error: null,
   }));
+  const [mergePrompt, setMergePrompt] =
+    useState<PersonMergeSuggestionRequest | null>(null);
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [nameCommitting, setNameCommitting] = useState(false);
 
   const saveGen = useRef(0);
+  const pendingBirthRef = useRef(state.birthDateDisplay);
+  const personRef = useRef(person);
+  const nameRef = useRef(state.name);
+  const dobDisplayRef = useRef(state.birthDateDisplay);
+  personRef.current = person;
+  nameRef.current = state.name;
+  dobDisplayRef.current = state.birthDateDisplay;
 
   useEffect(() => {
     setState((s) => ({
@@ -56,29 +75,26 @@ export function PersonIdentityEditor({
       birthDateIso: person.birthDate ?? null,
       error: null,
     }));
-  }, [person.id, person.name, person.birthDate]);
+    setMergePrompt(null);
+    setNameCommitting(false);
+  }, [person.id]);
 
-  const persist = useCallback(
-    async (name: string, birthDateDisplay: string) => {
-      const parsed = displayDateToIso(birthDateDisplay);
-      if (parsed === "invalid") {
-        setState((s) => ({
-          ...s,
-          error: "Use dd/mm/yyyy for date of birth",
-        }));
-        return false;
-      }
-      const birthDate = parsed;
-      const serverName = person.name ?? "";
-      const serverDob = person.birthDate ?? null;
-      if (name === serverName && birthDate === serverDob) {
-        return true;
-      }
+  useEffect(() => {
+    if (mergePrompt) return;
+    setState((s) => ({
+      ...s,
+      name: person.name ?? "",
+      birthDateDisplay: isoDateToDisplay(person.birthDate),
+      birthDateIso: person.birthDate ?? null,
+    }));
+  }, [person.name, person.birthDate, mergePrompt]);
 
+  const putPerson = useCallback(
+    async (personId: string, name: string, birthDate: string | null) => {
       const gen = ++saveGen.current;
       setState((s) => ({ ...s, saving: true, error: null }));
       try {
-        const res = await fetch(`/api/immich/people/${person.id}`, {
+        const res = await fetch(`/api/immich/people/${personId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, birthDate }),
@@ -87,7 +103,7 @@ export function PersonIdentityEditor({
         if (!res.ok) {
           throw new Error(data.message ?? "Save failed");
         }
-        if (gen !== saveGen.current) return true;
+        if (gen !== saveGen.current) return data;
         onPersonUpdated(data);
         setState((s) => ({
           ...s,
@@ -96,52 +112,188 @@ export function PersonIdentityEditor({
           birthDateDisplay: isoDateToDisplay(data.birthDate),
           birthDateIso: data.birthDate ?? null,
         }));
-        return true;
+        return data;
       } catch (e) {
-        if (gen !== saveGen.current) return false;
+        if (gen !== saveGen.current) return null;
         setState((s) => ({
           ...s,
           saving: false,
           error: e instanceof Error ? e.message : "Save failed",
         }));
-        return false;
+        return null;
       }
     },
-    [onPersonUpdated, person.birthDate, person.id, person.name],
+    [onPersonUpdated],
   );
 
+  const resolveBirthDate = useCallback(
+    (birthDateDisplay: string): string | null | undefined => {
+      const parsed = displayDateToIso(birthDateDisplay);
+      if (parsed === "invalid") {
+        setState((s) => ({
+          ...s,
+          error: "Use dd/mm/yyyy for date of birth",
+        }));
+        return undefined;
+      }
+      return parsed;
+    },
+    [],
+  );
+
+  const commitNameChange = useCallback(async (nameOverride?: string) => {
+    if (mergePrompt || mergeLoading || nameCommitting) return;
+
+    const p = personRef.current;
+    const birthDateDisplay = dobDisplayRef.current;
+    const birthDate = resolveBirthDate(birthDateDisplay);
+    if (birthDate === undefined) return;
+
+    const trimmed = (nameOverride ?? nameRef.current).trim();
+    const serverName = (p.name ?? "").trim();
+    if (trimmed === serverName) return;
+
+    setNameCommitting(true);
+    setState((s) => ({ ...s, error: null }));
+    pendingBirthRef.current = birthDateDisplay;
+
+    try {
+      if (trimmed) {
+        const suggestion = await fetchMergeSuggestionIfNeeded(
+          p,
+          trimmed,
+          cataloguePeople,
+        );
+        if (suggestion) {
+          setMergePrompt(suggestion);
+          return;
+        }
+      }
+      await putPerson(p.id, trimmed, birthDate);
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        error: e instanceof Error ? e.message : "Name check failed",
+      }));
+    } finally {
+      setNameCommitting(false);
+    }
+  }, [
+    cataloguePeople,
+    mergeLoading,
+    mergePrompt,
+    nameCommitting,
+    putPerson,
+    resolveBirthDate,
+  ]);
+
   useEffect(() => {
+    if (mergePrompt) return;
+
     const parsed = displayDateToIso(state.birthDateDisplay);
     if (parsed === "invalid") return;
 
-    const serverName = person.name ?? "";
+    const serverName = (person.name ?? "").trim();
     const serverDob = person.birthDate ?? null;
-    if (state.name === serverName && parsed === serverDob) return;
+    const nameChanged = state.name.trim() !== serverName;
+    const dobChanged = parsed !== serverDob;
+    if (!nameChanged && !dobChanged) return;
 
     const timer = window.setTimeout(() => {
-      void persist(state.name, state.birthDateDisplay);
-    }, AUTOSAVE_MS);
+      if (nameChanged) {
+        void commitNameChange();
+      } else if (dobChanged) {
+        void putPerson(person.id, person.name ?? "", parsed);
+      }
+    }, nameChanged ? NAME_COMMIT_MS : DOB_AUTOSAVE_MS);
 
     return () => window.clearTimeout(timer);
   }, [
-    state.name,
     state.birthDateDisplay,
+    state.name,
+    person.id,
     person.name,
     person.birthDate,
-    persist,
+    putPerson,
+    mergePrompt,
+    commitNameChange,
   ]);
 
   const onNormalizeName = () => {
     const normalized = normalizePersonName(state.name);
     setState((s) => ({ ...s, name: normalized, error: null }));
-    void persist(normalized, state.birthDateDisplay);
+    void commitNameChange(normalized);
+  };
+
+  const dismissMergePrompt = () => {
+    setMergePrompt(null);
+    setState((s) => ({
+      ...s,
+      name: person.name ?? "",
+      error: null,
+    }));
+  };
+
+  const onKeepSeparate = async () => {
+    if (!mergePrompt) return;
+    const birthDate = resolveBirthDate(pendingBirthRef.current);
+    if (birthDate === undefined) return;
+    setMergeLoading(true);
+    const ok = await putPerson(
+      person.id,
+      mergePrompt.newName,
+      birthDate,
+    );
+    setMergeLoading(false);
+    if (ok) setMergePrompt(null);
+  };
+
+  const onMergeSamePerson = async (targetPersonId: string) => {
+    if (!mergePrompt) return;
+    const birthDate = resolveBirthDate(pendingBirthRef.current);
+    if (birthDate === undefined) return;
+
+    setMergeLoading(true);
+    setState((s) => ({ ...s, error: null }));
+    try {
+      const res = await fetch(
+        `/api/immich/people/${targetPersonId}/merge`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourcePersonIds: [person.id],
+            name: mergePrompt.newName,
+            birthDate,
+          }),
+        },
+      );
+      const data = (await res.json()) as {
+        person?: ImmichPerson;
+        message?: string;
+      };
+      if (!res.ok || !data.person) {
+        throw new Error(data.message ?? "Merge failed");
+      }
+      onPersonMerged?.(person.id, data.person);
+      onPersonUpdated(data.person);
+      setMergePrompt(null);
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        error: e instanceof Error ? e.message : "Merge failed",
+      }));
+    } finally {
+      setMergeLoading(false);
+    }
   };
 
   return (
     <div
       className={cn(
         "flex flex-col gap-2",
-        variant === "panel" && "rounded-md border border-border bg-muted/30 p-3",
+        variant === "panel" &&
+          "rounded-md border border-border bg-muted/30 p-3",
       )}
     >
       {showFaceThumb ? (
@@ -157,19 +309,31 @@ export function PersonIdentityEditor({
           <p className="text-sm font-medium">{person.name || "Unnamed"}</p>
         </div>
       ) : null}
-      <label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        Name
-        <div className="relative mt-1">
+        <label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Name
+          <span className="ml-1 font-normal normal-case text-muted-foreground">
+            (Tab or Enter to save)
+          </span>
+          <div className="relative mt-1">
           <input
             className={nameFieldClassName}
             value={state.name}
+            disabled={mergeLoading}
             onChange={(e) =>
               setState((s) => ({ ...s, name: e.target.value, error: null }))
             }
+            onBlur={() => void commitNameChange()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commitNameChange();
+              }
+            }}
           />
           <button
             type="button"
             onClick={onNormalizeName}
+            disabled={mergeLoading}
             className="absolute top-1/2 right-1 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             title="Trim and capitalize name"
             aria-label="Normalize name formatting"
@@ -205,8 +369,19 @@ export function PersonIdentityEditor({
       {state.error ? (
         <p className="text-xs text-destructive">{state.error}</p>
       ) : null}
-      {state.saving ? (
+      {state.saving || nameCommitting ? (
         <p className="text-xs text-muted-foreground">Saving…</p>
+      ) : null}
+
+      {mergePrompt ? (
+        <PersonMergeSuggestionPanel
+          key={`${mergePrompt.editingPerson.id}:${mergePrompt.newName}:${mergePrompt.primaryMatch.id}`}
+          request={mergePrompt}
+          loading={mergeLoading}
+          onDismiss={dismissMergePrompt}
+          onKeepSeparate={() => void onKeepSeparate()}
+          onMergeSamePerson={(id) => void onMergeSamePerson(id)}
+        />
       ) : null}
     </div>
   );

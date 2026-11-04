@@ -9,21 +9,27 @@ import type { ImmichAsset, ImmichPerson } from "@/lib/immich/types";
 type AssetFacesSectionProps = {
   assetId: string | null;
   contextPerson: ImmichPerson | null;
+  cataloguePeople?: ImmichPerson[];
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
   onSwitchContextPerson: (personId: string) => void;
 };
 
 type LoadedProps = {
   assetId: string;
   contextPerson: ImmichPerson;
+  cataloguePeople: ImmichPerson[];
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
   onSwitchContextPerson: (personId: string) => void;
 };
 
 function AssetFacesLoaded({
   assetId,
   contextPerson,
+  cataloguePeople,
   onPersonUpdated,
+  onPersonMerged,
   onSwitchContextPerson,
 }: LoadedProps) {
   const [loading, setLoading] = useState(true);
@@ -121,7 +127,9 @@ function AssetFacesLoaded({
           key={editorPerson.id}
           person={editorPerson}
           variant="panel"
+          cataloguePeople={cataloguePeople}
           onPersonUpdated={onPersonUpdated}
+          onPersonMerged={onPersonMerged}
         />
       ) : null}
     </div>
@@ -131,7 +139,9 @@ function AssetFacesLoaded({
 export function AssetFacesSection({
   assetId,
   contextPerson,
+  cataloguePeople = [],
   onPersonUpdated,
+  onPersonMerged,
   onSwitchContextPerson,
 }: AssetFacesSectionProps) {
   if (!assetId || !contextPerson) return null;
@@ -141,7 +151,9 @@ export function AssetFacesSection({
       key={assetId}
       assetId={assetId}
       contextPerson={contextPerson}
+      cataloguePeople={cataloguePeople}
       onPersonUpdated={onPersonUpdated}
+      onPersonMerged={onPersonMerged}
       onSwitchContextPerson={onSwitchContextPerson}
     />
   );

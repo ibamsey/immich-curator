@@ -41,6 +41,31 @@ export async function updatePerson(
   });
 }
 
+export async function searchPeopleByName(
+  name: string,
+  withHidden = true,
+): Promise<ImmichPerson[]> {
+  const params = new URLSearchParams({ name });
+  if (withHidden) params.set("withHidden", "true");
+  return immichJson<ImmichPerson[]>(`/api/search/person?${params.toString()}`);
+}
+
+export async function mergePeopleIntoTarget(
+  targetPersonId: string,
+  sourcePersonIds: string[],
+): Promise<void> {
+  const sources = [...new Set(sourcePersonIds)].filter(
+    (id) => id !== targetPersonId,
+  );
+  if (sources.length === 0) {
+    throw new Error("At least one distinct person is required to merge");
+  }
+  await immichJson(`/api/people/${targetPersonId}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ ids: sources }),
+  });
+}
+
 export async function getPeopleInSharedScope(
   operatorUserId: string | null,
 ): Promise<{ people: ImmichPerson[]; sharedAlbumIds: string[] }> {

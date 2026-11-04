@@ -12,7 +12,9 @@ type PersonContextPanelProps = {
   sharedAlbumIds: string[];
   onOpenInExplore: (assetId: string, albumId: string | null) => void;
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
   onSwitchContextPerson: (personId: string) => void;
+  cataloguePeople?: ImmichPerson[];
 };
 
 function PersonContextPanelBody({
@@ -20,7 +22,9 @@ function PersonContextPanelBody({
   sharedAlbumIds,
   onOpenInExplore,
   onPersonUpdated,
+  onPersonMerged,
   onSwitchContextPerson,
+  cataloguePeople = [],
 }: Omit<PersonContextPanelProps, "person" | "assets" | "loadingAssets"> & {
   person: ImmichPerson;
 }) {
@@ -54,7 +58,9 @@ function PersonContextPanelBody({
       <AssetFacesSection
         assetId={selectedAssetId}
         contextPerson={person}
+        cataloguePeople={cataloguePeople}
         onPersonUpdated={onPersonUpdated}
+        onPersonMerged={onPersonMerged}
         onSwitchContextPerson={(id) => {
           setSelectedAssetId(null);
           onSwitchContextPerson(id);
@@ -68,8 +74,10 @@ export function PersonContextPanel({
   person,
   onOpenInExplore,
   onPersonUpdated,
+  onPersonMerged,
   onSwitchContextPerson,
   sharedAlbumIds,
+  cataloguePeople,
 }: PersonContextPanelProps) {
   if (!person) {
     return (
@@ -86,7 +94,9 @@ export function PersonContextPanel({
       sharedAlbumIds={sharedAlbumIds}
       onOpenInExplore={onOpenInExplore}
       onPersonUpdated={onPersonUpdated}
+      onPersonMerged={onPersonMerged}
       onSwitchContextPerson={onSwitchContextPerson}
+      cataloguePeople={cataloguePeople}
     />
   );
 }

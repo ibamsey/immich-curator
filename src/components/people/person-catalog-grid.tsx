@@ -8,9 +8,12 @@ import type { ImmichPerson } from "@/lib/immich/types";
 
 type PersonCatalogGridProps = {
   people: ImmichPerson[];
+  cataloguePeople?: ImmichPerson[];
   selectedId: string | null;
   onSelect: (personId: string) => void;
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
+  emptyMessage?: string;
 };
 
 function PersonCatalogTile({
@@ -18,18 +21,22 @@ function PersonCatalogTile({
   selected,
   onSelect,
   onPersonUpdated,
+  onPersonMerged,
+  cataloguePeople,
 }: {
   person: ImmichPerson;
   selected: boolean;
   onSelect: () => void;
   onPersonUpdated: (person: ImmichPerson) => void;
+  onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
+  cataloguePeople: ImmichPerson[];
 }) {
   return (
     <div
       id={`person-catalog-${person.id}`}
       role="listitem"
       className={cn(
-        "flex flex-col overflow-hidden rounded-md border border-border bg-card scroll-mt-3",
+        "flex flex-col overflow-visible rounded-md border border-border bg-card scroll-mt-3",
         selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
     >
@@ -51,7 +58,9 @@ function PersonCatalogTile({
           person={person}
           variant="catalog"
           showFaceThumb={false}
+          cataloguePeople={cataloguePeople}
           onPersonUpdated={onPersonUpdated}
+          onPersonMerged={onPersonMerged}
         />
       </div>
     </div>
@@ -60,9 +69,12 @@ function PersonCatalogTile({
 
 export function PersonCatalogGrid({
   people,
+  cataloguePeople,
   selectedId,
   onSelect,
   onPersonUpdated,
+  onPersonMerged,
+  emptyMessage = "No people found on assets in albums shared with the operator. Share an album from Albums first.",
 }: PersonCatalogGridProps) {
   useEffect(() => {
     if (!selectedId) return;
@@ -73,8 +85,7 @@ export function PersonCatalogGrid({
   if (people.length === 0) {
     return (
       <p className="p-8 text-center text-sm text-muted-foreground">
-        No people found on assets in albums shared with the operator. Share an
-        album from Albums first.
+        {emptyMessage}
       </p>
     );
   }
@@ -91,6 +102,8 @@ export function PersonCatalogGrid({
           selected={person.id === selectedId}
           onSelect={() => onSelect(person.id)}
           onPersonUpdated={onPersonUpdated}
+          onPersonMerged={onPersonMerged}
+          cataloguePeople={cataloguePeople ?? people}
         />
       ))}
     </div>

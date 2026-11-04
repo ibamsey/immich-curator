@@ -2,9 +2,10 @@ import { getPeopleInSharedScope } from "@/lib/immich/people";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { PeopleWorkspace } from "@/components/people/people-workspace";
+import { peopleTabForSelection } from "@/lib/people/bucket-people";
 
 type PageProps = {
-  searchParams: Promise<{ personId?: string }>;
+  searchParams: Promise<{ personId?: string; tab?: string }>;
 };
 
 export default async function PeoplePage({ searchParams }: PageProps) {
@@ -33,6 +34,10 @@ export default async function PeoplePage({ searchParams }: PageProps) {
       initialPeople={initialPeople}
       initialSharedAlbumIds={initialSharedAlbumIds}
       loadError={loadError}
+      initialTab={peopleTabForSelection(
+        initialPeople.find((person) => person.id === initialPersonId),
+        params.tab,
+      )}
       initialSelectedPersonId={initialPersonId}
     />
   );

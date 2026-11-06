@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
 import { getAlbum, getAlbumAssets } from "@/lib/immich/albums";
 import { resolveExploreForAsset } from "@/lib/immich/explore-context";
@@ -63,19 +64,18 @@ async function loadExploreData(
 
 type ExploreDataProps = {
   shell: ShellContext;
-  assetId: string | undefined;
-  albumId: string | undefined;
+  searchParams: Promise<{ assetId?: string; albumId?: string }>;
 };
 
 /**
  * Async server segment: uncached Immich fetches run inside Suspense on the parent route
  * so Cache Components / partial prefetch does not warn on navigation.
  */
-export async function ExploreData({
-  shell,
-  assetId,
-  albumId,
-}: ExploreDataProps) {
+export async function ExploreData({ shell, searchParams }: ExploreDataProps) {
+  await connection();
+  const params = await searchParams;
+  const assetId = params.assetId;
+  const albumId = params.albumId;
   const data = await loadExploreData(assetId, albumId);
 
   if (!data.ok) {

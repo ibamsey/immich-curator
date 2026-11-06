@@ -8,17 +8,11 @@ type PageProps = {
 };
 
 export default async function PeoplePage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  const initialPersonId = params.personId?.trim() || null;
   const shell = await loadShellContext();
 
   return (
     <Suspense fallback={<PeopleFallback shell={shell} />}>
-      <PeopleData
-        shell={shell}
-        initialPersonId={initialPersonId}
-        requestedTab={params.tab}
-      />
+      <PeopleData shell={shell} searchParams={searchParams} />
     </Suspense>
   );
 }

@@ -7,16 +7,17 @@ import type { ShellContext } from "@/lib/server/shell-context";
 
 type PeopleDataProps = {
   shell: ShellContext;
-  initialPersonId: string | null;
-  requestedTab?: string;
+  searchParams: Promise<{
+    personId?: string;
+    tab?: "faces" | "duplicates" | string;
+  }>;
 };
 
-export async function PeopleData({
-  shell,
-  initialPersonId,
-  requestedTab,
-}: PeopleDataProps) {
+export async function PeopleData({ shell, searchParams }: PeopleDataProps) {
   await connection();
+  const params = await searchParams;
+  const initialPersonId = params.personId?.trim() || null;
+  const requestedTab = params.tab;
 
   let initialPeople: Awaited<
     ReturnType<typeof getPeopleInSharedScope>

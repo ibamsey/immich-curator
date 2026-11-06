@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { connection } from "next/server";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { ExploreData } from "./explore-data";
 import { ExploreFallback } from "./explore-fallback";
@@ -9,17 +8,11 @@ type PageProps = {
 };
 
 export default async function ExplorePage({ searchParams }: PageProps) {
-  await connection();
   const shell = await loadShellContext();
-  const params = await searchParams;
 
   return (
     <Suspense fallback={<ExploreFallback shell={shell} />}>
-      <ExploreData
-        shell={shell}
-        assetId={params.assetId}
-        albumId={params.albumId}
-      />
+      <ExploreData shell={shell} searchParams={searchParams} />
     </Suspense>
   );
 }

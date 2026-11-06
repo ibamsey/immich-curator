@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPerson, updatePerson } from "@/lib/immich/people";
+import { deletePerson, getPerson, updatePerson } from "@/lib/immich/people";
 
 type Params = { params: Promise<{ personId: string }> };
 
@@ -34,6 +34,18 @@ export async function PUT(request: Request, { params }: Params) {
       return NextResponse.json({ message: e.message }, { status: 400 });
     }
     const message = e instanceof Error ? e.message : "Failed to update person";
+    return NextResponse.json({ message }, { status: 502 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: Params) {
+  try {
+    const { personId } = await params;
+    await deletePerson(personId);
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Failed to delete person";
     return NextResponse.json({ message }, { status: 502 });
   }
 }

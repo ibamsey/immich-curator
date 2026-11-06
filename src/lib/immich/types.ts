@@ -14,6 +14,10 @@ export type ImmichAlbumUser = {
 export type ImmichTag = {
   id: string;
   name: string;
+  /** Full path. Leaf `name` is the last segment. */
+  value?: string;
+  parentId?: string;
+  color?: string;
 };
 
 export type ImmichExif = {
@@ -111,6 +115,13 @@ export type ImmichSearchAssetsResponse = {
     items: ImmichAsset[];
     total: number;
   };
+};
+
+/** Duplicate group from `GET /api/duplicates` (Immich duplicate detection). */
+export type ImmichDuplicateGroup = {
+  duplicateId: string;
+  assets: ImmichAsset[];
+  suggestedKeepAssetIds?: string[];
 };
 
 export type ImmichActivityType = "comment" | "like";

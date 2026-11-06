@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { AssetGridToolbar } from "@/components/grid/asset-grid-toolbar";
 import { GroupedAssetGrid } from "@/components/grid/grouped-asset-grid";
+import {
+  AssetPreviewModal,
+  type AssetPreviewTarget,
+} from "@/components/grid/asset-preview-modal";
 import { useAssetGridQuery } from "@/components/grid/use-asset-grid-query";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import type { GridQueryScope } from "@/lib/assets/grid-query-types";
-
 type QueryableAssetGridSectionProps = {
   scope: GridQueryScope;
   storageKey: string | null;
@@ -20,9 +23,22 @@ type QueryableAssetGridSectionProps = {
   showToolbar?: boolean;
   /** When false, do not persist query in sessionStorage. */
   persistQuery?: boolean;
+  /**
+   * When true (thumb grid), selecting a tile also calls the zoom/pan preview with the full original.
+   * Prefer opening from the RHS preview instead; omit for that UX.
+   */
+  openGridPreview?: boolean;
 };
 
-export function QueryableAssetGridSection({
+export type QueryableAssetGridSectionHandle = {
+  removeAsset: (assetId: string) => void;
+  refetch: () => void;
+};
+
+export const QueryableAssetGridSection = forwardRef<
+  QueryableAssetGridSectionHandle,
+  QueryableAssetGridSectionProps
+>(function QueryableAssetGridSection({
   scope,
   storageKey,
   selectedId,
@@ -33,12 +49,30 @@ export function QueryableAssetGridSection({
   onTotalChange,
   showToolbar = true,
   persistQuery = true,
-}: QueryableAssetGridSectionProps) {
+  openGridPreview = false,
+}, ref) {
   const scanDefaultDpi = useScanDefaultDpi();
-  const { query, setQuery, assets, groups, total, loading, error } =
-    useAssetGridQuery(scope, storageKey, {
-      persistQuery: showToolbar && persistQuery,
-    });
+  const [gridPreviewOpen, setGridPreviewOpen] = useState(false);
+  const [gridPreviewAsset, setGridPreviewAsset] =
+    useState<AssetPreviewTarget | null>(null);
+  const {
+    query,
+    setQuery,
+    assets,
+    groups,
+    total,
+    loading,
+    error,
+    removeAsset,
+    refetch,
+  } = useAssetGridQuery(scope, storageKey, {
+    persistQuery: showToolbar && persistQuery,
+  });
+
+  useImperativeHandle(ref, () => ({ removeAsset, refetch }), [
+    removeAsset,
+    refetch,
+  ]);
 
   useEffect(() => {
     onTotalChange?.(total);
@@ -76,9 +110,28 @@ export function QueryableAssetGridSection({
           onSelect={onSelect}
           layout={layout}
           onOpenInExplore={onOpenInExplore}
+          onPreviewOpen={
+            openGridPreview
+              ? (asset) => {
+                  setGridPreviewAsset(asset);
+                  setGridPreviewOpen(true);
+                }
+              : undefined
+          }
           scanDefaultDpi={scanDefaultDpi}
         />
       )}
+      {openGridPreview ? (
+        <AssetPreviewModal
+          key={gridPreviewAsset?.id ?? "closed"}
+          open={gridPreviewOpen}
+          onOpenChange={(open) => {
+            setGridPreviewOpen(open);
+            if (!open) setGridPreviewAsset(null);
+          }}
+          asset={gridPreviewAsset}
+        />
+      ) : null}
     </div>
   );
-}
+});

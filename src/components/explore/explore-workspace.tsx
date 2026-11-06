@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
-import { QueryableAssetGridSection } from "@/components/grid/queryable-asset-grid-section";
+import {
+  QueryableAssetGridSection,
+  type QueryableAssetGridSectionHandle,
+} from "@/components/grid/queryable-asset-grid-section";
 import {
   AssetCurationPanel,
   type CurationPanelConfig,
@@ -11,6 +14,10 @@ import type { ShellContext } from "@/lib/server/shell-context";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
 import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
+import {
+  AssetPreviewModal,
+  type AssetPreviewTarget,
+} from "@/components/grid/asset-preview-modal";
 
 export type { CurationPanelConfig };
 
@@ -34,6 +41,10 @@ export function ExploreWorkspace({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [photoTotal, setPhotoTotal] = useState<number | null>(null);
+  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
+  const [fullPreviewAsset, setFullPreviewAsset] =
+    useState<AssetPreviewTarget | null>(null);
+  const gridRef = useRef<QueryableAssetGridSectionHandle>(null);
 
   const onSelect = useCallback((assetId: string) => {
     setSelectedId(assetId);
@@ -65,11 +76,24 @@ export function ExploreWorkspace({
     setDetail(updated);
   }, []);
 
-  const onAssetDeleted = useCallback(() => {
+  const onAssetDeleted = useCallback((assetId: string) => {
+    gridRef.current?.removeAsset(assetId);
+    gridRef.current?.refetch();
     setSelectedId(null);
     setDetail(null);
     setPanelOpen(false);
+    setFullPreviewOpen(false);
+    setFullPreviewAsset(null);
   }, []);
+
+  const openFullPreview = useCallback(() => {
+    if (!detail) return;
+    setFullPreviewAsset({
+      id: detail.id,
+      originalFileName: detail.originalFileName,
+    });
+    setFullPreviewOpen(true);
+  }, [detail]);
 
   const panelContent = selectedId ? (
     <AssetCurationPanel
@@ -82,6 +106,7 @@ export function ExploreWorkspace({
       onAssetUpdated={onAssetUpdated}
       onAssetDeleted={onAssetDeleted}
       defaultScanDpi={scanDefaultDpi}
+      onOpenFullPreview={openFullPreview}
     />
   ) : null;
 
@@ -99,6 +124,7 @@ export function ExploreWorkspace({
       panelContent={panelContent}
     >
       <QueryableAssetGridSection
+        ref={gridRef}
         scope={{ mode: "album", albumId: album.id }}
         storageKey={`explore:${album.id}`}
         selectedId={selectedId}
@@ -107,9 +133,20 @@ export function ExploreWorkspace({
           setSelectedId(null);
           setDetail(null);
           setPanelOpen(false);
+          setFullPreviewOpen(false);
+          setFullPreviewAsset(null);
         }}
         layout="thumb"
         onTotalChange={setPhotoTotal}
+      />
+      <AssetPreviewModal
+        key={fullPreviewAsset?.id ?? "closed"}
+        open={fullPreviewOpen}
+        onOpenChange={(open) => {
+          setFullPreviewOpen(open);
+          if (!open) setFullPreviewAsset(null);
+        }}
+        asset={fullPreviewAsset}
       />
     </AppShell>
   );

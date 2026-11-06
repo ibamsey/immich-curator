@@ -17,7 +17,7 @@
 | Element | Behaviour |
 |---------|-----------|
 | Data source | `CURATOR_DEFAULT_ALBUM_ID` or `POUNDSGATE_ALBUM_ID` |
-| Grid | Thumbnails via same-origin `/api/immich/assets/{id}/thumbnail` |
+| Grid | Thumbnails via same-origin `/api/immich/assets/{id}/thumbnail`. Rolling over a detected face shows that face’s rectangle and name, mapped through the square `object-cover` crop. A single click edits the name in the chip beside the face (minimum width 8rem); a double click opens that person in People. Boxes load for tiles near the viewport from `POST /api/immich/assets/faces`. Clicks on the photo, outside the name, still select the asset. |
 | Selection | Single select; blue accent ring |
 | Panel | [DES-004](./DES-004-asset-curation-panel.md) `AssetCurationPanel` on select |
 

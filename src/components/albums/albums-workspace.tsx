@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AlbumGrid } from "@/components/albums/album-grid";
 import { AlbumsContextPanel } from "@/components/albums/albums-context-panel";
-import { QueryableAssetGridSection } from "@/components/grid/queryable-asset-grid-section";
+import {
+  QueryableAssetGridSection,
+  type QueryableAssetGridSectionHandle,
+} from "@/components/grid/queryable-asset-grid-section";
 import {
   AssetCurationPanel,
   type CurationPanelConfig,
@@ -14,6 +17,10 @@ import type { ShellContext } from "@/lib/server/shell-context";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
 import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
+import {
+  AssetPreviewModal,
+  type AssetPreviewTarget,
+} from "@/components/grid/asset-preview-modal";
 
 type AlbumsWorkspaceProps = {
   shell: ShellContext;
@@ -49,6 +56,10 @@ export function AlbumsWorkspace({
     null,
   );
   const [loadingAssetDetail, setLoadingAssetDetail] = useState(false);
+  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
+  const [fullPreviewAsset, setFullPreviewAsset] =
+    useState<AssetPreviewTarget | null>(null);
+  const exploreGridRef = useRef<QueryableAssetGridSectionHandle>(null);
 
   const exploreMode = viewMode === "explore";
 
@@ -86,6 +97,8 @@ export function AlbumsWorkspace({
     setExplorePhotoTotal(null);
     setSelectedAssetId(null);
     setAssetDetail(null);
+    setFullPreviewOpen(false);
+    setFullPreviewAsset(null);
     setPanelOpen(true);
   }, []);
 
@@ -145,9 +158,13 @@ export function AlbumsWorkspace({
     setAssetDetail(updated);
   }, []);
 
-  const onAssetDeleted = useCallback(() => {
+  const onAssetDeleted = useCallback((assetId: string) => {
+    exploreGridRef.current?.removeAsset(assetId);
+    exploreGridRef.current?.refetch();
     setSelectedAssetId(null);
     setAssetDetail(null);
+    setFullPreviewOpen(false);
+    setFullPreviewAsset(null);
     setPanelOpen(false);
   }, []);
 
@@ -169,6 +186,15 @@ export function AlbumsWorkspace({
         setLoadingAssetDetail(false);
       });
   }, []);
+
+  const openFullPreview = useCallback(() => {
+    if (!assetDetail) return;
+    setFullPreviewAsset({
+      id: assetDetail.id,
+      originalFileName: assetDetail.originalFileName,
+    });
+    setFullPreviewOpen(true);
+  }, [assetDetail]);
 
   const crudPanelContent = (
     <AlbumsContextPanel
@@ -195,6 +221,7 @@ export function AlbumsWorkspace({
       onAssetUpdated={onAssetUpdated}
       onAssetDeleted={onAssetDeleted}
       defaultScanDpi={scanDefaultDpi}
+      onOpenFullPreview={openFullPreview}
     />
   ) : null;
 
@@ -232,6 +259,7 @@ export function AlbumsWorkspace({
           </p>
         ) : (
           <QueryableAssetGridSection
+            ref={exploreGridRef}
             scope={{ mode: "album", albumId: exploreAlbum.id }}
             storageKey={`albums:${exploreAlbum.id}`}
             selectedId={selectedAssetId}
@@ -239,6 +267,8 @@ export function AlbumsWorkspace({
             onSelectionLost={() => {
               setSelectedAssetId(null);
               setAssetDetail(null);
+              setFullPreviewOpen(false);
+              setFullPreviewAsset(null);
               setPanelOpen(false);
             }}
             layout="thumb"
@@ -267,6 +297,17 @@ export function AlbumsWorkspace({
           />
         </>
       )}
+      {exploreMode ? (
+        <AssetPreviewModal
+          key={fullPreviewAsset?.id ?? "closed"}
+          open={fullPreviewOpen}
+          onOpenChange={(open) => {
+            setFullPreviewOpen(open);
+            if (!open) setFullPreviewAsset(null);
+          }}
+          asset={fullPreviewAsset}
+        />
+      ) : null}
     </AppShell>
   );
 }

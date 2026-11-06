@@ -43,6 +43,12 @@ If the user asks for code without docs, prefer creating minimal story + plan stu
 - Do not commit `.env.local` or API keys.
 - Full stack list, styling rules, testing guidance, and **no native alert/confirm**: **ADR-0003**.
 
+## Agent behaviour (start/stop services)
+
+When verification or the user’s goal needs something running (e.g. `npm run dev`, `systemctl --user start/stop immich-curator`, Docker compose), **run the appropriate commands yourself** in the terminal and confirm they work—**do not** default to telling the user to do it for you. Only hand off when execution is blocked (no shell, missing secrets, sudo-only steps, or actions the user must explicitly approve).
+
+Pick the lightest option that fits the task: hot reload → `npm run dev` from this repo; production-style check → user systemd unit per **Always-on service** below. Avoid leaving duplicate servers on the same port.
+
 ## Always-on service (dartmoor)
 
 immich-curator runs as a **user systemd unit** (enabled at login):

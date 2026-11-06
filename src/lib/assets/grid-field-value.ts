@@ -7,6 +7,7 @@ import {
   type ComputeContext,
 } from "@/lib/assets/compute-context";
 import type { GridAsset } from "@/lib/assets/grid-asset";
+import { tagPath } from "@/lib/immich/tag-policy";
 
 export function getGridFieldValue(
   asset: GridAsset,
@@ -29,7 +30,7 @@ export function getGridFieldValue(
     case "hasPeople":
       return (asset.people?.length ?? 0) > 0;
     case "tags":
-      return asset.tags?.[0]?.name ?? "";
+      return asset.tags?.[0] ? tagPath(asset.tags[0]) : "";
     case "people":
       return asset.people?.[0]?.name ?? "Unnamed";
     case "month": {

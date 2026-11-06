@@ -1,6 +1,7 @@
+import { connection } from "next/server";
 import { getAllAlbums } from "@/lib/immich/albums";
 import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
-import { resolveOperatorUserId } from "@/lib/immich/users";
+import { resolveOperatorUserIdCached } from "@/lib/immich/users";
 import { loadShellContext } from "@/lib/server/shell-context";
 import { AlbumsWorkspace } from "@/components/albums/albums-workspace";
 import { ConfigError } from "@/components/config-error";
@@ -15,7 +16,7 @@ async function loadAlbumsData(): Promise<AlbumsData> {
   try {
     const env = getCuratorEnv();
     const albums = await getAllAlbums();
-    const operatorUserId = await resolveOperatorUserId();
+    const operatorUserId = await resolveOperatorUserIdCached();
     return {
       ok: true,
       albums,
@@ -33,6 +34,7 @@ async function loadAlbumsData(): Promise<AlbumsData> {
 }
 
 export default async function AlbumsPage() {
+  await connection();
   const shell = await loadShellContext();
   const data = await loadAlbumsData();
 

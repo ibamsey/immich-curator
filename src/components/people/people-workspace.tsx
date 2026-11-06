@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, startTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { DetectionContextPanel } from "@/components/people/detection-context-panel";
 import { FacesCatalog } from "@/components/people/faces-catalog";
 import { PersonCatalogGrid } from "@/components/people/person-catalog-grid";
 import { PersonContextPanel } from "@/components/people/person-context-panel";
+import { DuplicatesNameCatalog } from "@/components/people/duplicates-name-catalog";
 import { cn } from "@/lib/utils";
 import type { ShellContext } from "@/lib/server/shell-context";
 import type { ImmichAsset, ImmichPerson } from "@/lib/immich/types";
@@ -17,6 +25,12 @@ import {
   type PeopleTab,
 } from "@/lib/people/bucket-people";
 import type { UnassignedFace } from "@/lib/people/unassigned-face";
+import type { PersonRhsPanelView } from "@/lib/people/person-rhs-panel";
+import {
+  readStoredPersonRhsPanelView,
+  writeStoredPersonRhsPanelView,
+} from "@/lib/people/person-rhs-panel";
+import { groupPeopleBySimilarNames } from "@/lib/people/name-similarity-groups";
 
 type Selection =
   | { kind: "person"; id: string }
@@ -59,6 +73,7 @@ export function PeopleWorkspace({
   const [sharedAlbumIds, setSharedAlbumIds] = useState(initialSharedAlbumIds);
   const [tab, setTab] = useState<PeopleTab>(initialTab);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const selectionRef = useRef<Selection | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [assets, setAssets] = useState<ImmichAsset[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
@@ -69,6 +84,29 @@ export function PeopleWorkspace({
   const [detectionsError, setDetectionsError] = useState<string | null>(null);
   const detectionsRequested = useRef(false);
   const mounted = useRef(true);
+  const [personRhsPanelView, setPersonRhsPanelViewState] =
+    useState<PersonRhsPanelView>("photos");
+
+  const tabRef = useRef<PeopleTab>(initialTab);
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
+    const stored = readStoredPersonRhsPanelView();
+    if (stored) {
+      queueMicrotask(() => setPersonRhsPanelViewState(stored));
+    }
+  }, []);
+
+  const setPersonRhsPanelView = useCallback((view: PersonRhsPanelView) => {
+    setPersonRhsPanelViewState(view);
+    writeStoredPersonRhsPanelView(view);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -78,6 +116,10 @@ export function PeopleWorkspace({
   }, []);
 
   const { named, unnamed } = bucketPeople(people);
+  const duplicateNameGroups = useMemo(
+    () => groupPeopleBySimilarNames(people),
+    [people],
+  );
   const selectedPerson =
     selection?.kind === "person"
       ? (people.find((p) => p.id === selection.id) ?? null)
@@ -114,7 +156,12 @@ export function PeopleWorkspace({
 
   const showPerson = useCallback(
     (personId: string, namedPerson: boolean) => {
-      const nextTab: PeopleTab = namedPerson ? "people" : "faces";
+      const stayOnDuplicates = tabRef.current === "duplicates";
+      const nextTab: PeopleTab = stayOnDuplicates
+        ? "duplicates"
+        : namedPerson
+          ? "people"
+          : "faces";
       setTab(nextTab);
       setSelection({ kind: "person", id: personId });
       setPanelOpen(true);
@@ -198,6 +245,21 @@ export function PeopleWorkspace({
     [showPerson],
   );
 
+  const onPersonDeleted = useCallback(
+    (personId: string) => {
+      setPeople((prev) => prev.filter((p) => p.id !== personId));
+      const sel = selectionRef.current;
+      if (sel?.kind === "person" && sel.id === personId) {
+        setSelection(null);
+        setPanelOpen(false);
+      }
+      if (tabRef.current === "duplicates") {
+        router.replace(peoplePageHref("duplicates", null));
+      }
+    },
+    [router],
+  );
+
   const onDetectionResolved = useCallback(
     (faceId: string, person: ImmichPerson) => {
       setDetections((prev) => prev.filter((face) => face.id !== faceId));
@@ -206,6 +268,17 @@ export function PeopleWorkspace({
     },
     [showPerson],
   );
+
+  const onFaceUnlinkedFromPerson = useCallback((face: UnassignedFace) => {
+    setDetections((prev) => {
+      if (prev.some((f) => f.id === face.id)) return prev;
+      return [face, ...prev];
+    });
+  }, []);
+
+  const onFaceLinkedFromPerson = useCallback((face: UnassignedFace) => {
+    setDetections((prev) => prev.filter((f) => f.id !== face.id));
+  }, []);
 
   const onSelectFace = useCallback(
     (face: UnassignedFace) => {
@@ -257,11 +330,15 @@ export function PeopleWorkspace({
         assets={assets}
         loadingAssets={loadingAssets}
         sharedAlbumIds={sharedAlbumIds}
+        panelView={personRhsPanelView}
+        onPanelViewChange={setPersonRhsPanelView}
         cataloguePeople={people}
         onOpenInExplore={onOpenInExplore}
         onPersonUpdated={onPersonUpdated}
         onPersonMerged={onPersonMerged}
         onSwitchContextPerson={onSelectPerson}
+        onFaceUnlinkedFromPerson={onFaceUnlinkedFromPerson}
+        onFaceLinkedFromPerson={onFaceLinkedFromPerson}
       />
     );
 
@@ -269,6 +346,8 @@ export function PeopleWorkspace({
     ? loadError
     : tab === "people"
       ? `${named.length} named`
+      : tab === "duplicates"
+        ? `${duplicateNameGroups.length} similar-name group${duplicateNameGroups.length === 1 ? "" : "s"}`
       : detectionsLoading
         ? "Loading faces…"
         : `${unnamed.length + detections.length} to name`;
@@ -279,7 +358,7 @@ export function PeopleWorkspace({
       connectionOk={shell.connectionOk}
       headerTitle="People"
       headerSubtitle={subtitle}
-      panelTitle="Photos"
+      panelTitle="Person"
       panelOpen={panelOpen}
       onPanelOpenChange={setPanelOpen}
       panelContent={panelContent}
@@ -297,6 +376,7 @@ export function PeopleWorkspace({
               [
                 ["people", "People"],
                 ["faces", "Faces"],
+                ["duplicates", "Duplicates"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -325,6 +405,18 @@ export function PeopleWorkspace({
               onPersonUpdated={onPersonUpdated}
               onPersonMerged={onPersonMerged}
               emptyMessage="No named people yet. Name someone on the Faces tab."
+            />
+          ) : tab === "duplicates" ? (
+            <DuplicatesNameCatalog
+              groups={duplicateNameGroups}
+              selectedId={
+                selection?.kind === "person" ? selection.id : null
+              }
+              onSelectPerson={onSelectPerson}
+              onPersonMerged={onPersonMerged}
+              onPersonUpdated={onPersonUpdated}
+              onPersonDeleted={onPersonDeleted}
+              onFaceUnlinkedFromPerson={onFaceUnlinkedFromPerson}
             />
           ) : (
             <FacesCatalog

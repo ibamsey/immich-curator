@@ -15,7 +15,8 @@
 2. Ian selects an album from Geoff’s library (header scope dropdown or **Albums** route — list from [UC-009](./UC-009-album-crud-in-curator.md); default Poundsgate if configured).
 3. App loads album metadata and asset list via server Route Handlers → Immich API.
 4. Ian filters, sorts, or groups the queue via the grid query bar ([UC-015](./UC-015-filter-sort-group-asset-grids.md), [DES-006](../designs/DES-006-asset-grid-query-bar.md)).
-5. Ian selects an asset to run UC-005–UC-008 or opens **Albums** for [UC-009](./UC-009-album-crud-in-curator.md) / [UC-010](./UC-010-move-assets-between-albums.md).
+5. On the main image grid, rolling over a detected face shows its rectangle and name. A single click on the name edits it in place. A double click opens that person in People ([UC-014](./UC-014-browse-people-in-shared-albums.md)).
+6. Ian selects an asset to run UC-005–UC-008 or opens **Albums** for [UC-009](./UC-009-album-crud-in-curator.md) / [UC-010](./UC-010-move-assets-between-albums.md).
 
 ## Alternate flows
 

@@ -39,4 +39,4 @@ External: [Immich API](https://docs.immich.app)
 
 ## Status
 
-User stories US-001–US-002 and use cases UC-001–UC-014 drafted; UC-003/009/012 signed off; UC-014 People in progress.
+User stories US-001–US-004 and use cases UC-001–UC-016 drafted; UC-003/009/012 signed off; UC-014 People in progress.

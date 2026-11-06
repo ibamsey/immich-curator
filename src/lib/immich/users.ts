@@ -1,3 +1,4 @@
+import { cacheLife } from "next/cache";
 import { getCuratorEnv } from "@/lib/config/env";
 import { immichJson } from "@/lib/immich/client";
 import type { ImmichUser } from "@/lib/immich/types";
@@ -15,8 +16,7 @@ async function fetchAllUsers(apiKey: string): Promise<ImmichUser[]> {
   return res.json() as Promise<ImmichUser[]>;
 }
 
-/** Resolve curator operator Immich user id (env id, or email via admin key). */
-export async function resolveOperatorUserId(): Promise<string | null> {
+async function resolveOperatorUserIdUncached(): Promise<string | null> {
   const env = getCuratorEnv();
   if (env.operatorUserId) {
     return env.operatorUserId;
@@ -37,6 +37,26 @@ export async function resolveOperatorUserId(): Promise<string | null> {
     }
     return null;
   }
+}
+
+/**
+ * Resolve curator operator Immich user id (env id, or email via admin key).
+ * Use in Route Handlers and other non–Cache Components contexts.
+ */
+export async function resolveOperatorUserId(): Promise<string | null> {
+  return resolveOperatorUserIdUncached();
+}
+
+/**
+ * Same as {@link resolveOperatorUserId}, but cached briefly for **app pages**
+ * using Cache Components / partial prefetch. Using the uncached version from a
+ * `"use cache"` layout/shell tree triggers “uncached data during navigation”.
+ * Do **not** call this from Route Handlers (prerender cache-miss risk).
+ */
+export async function resolveOperatorUserIdCached(): Promise<string | null> {
+  "use cache";
+  cacheLife("seconds");
+  return resolveOperatorUserIdUncached();
 }
 
 export async function getUserById(userId: string): Promise<ImmichUser | null> {

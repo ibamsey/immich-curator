@@ -5,6 +5,8 @@ import { PersonAssetList } from "@/components/grid/person-asset-list";
 import type { AssetQueryGroup } from "@/lib/assets/grid-query-types";
 import type { GridAsset } from "@/lib/assets/grid-asset";
 
+type PreviewAssetPick = Pick<GridAsset, "id" | "originalFileName">;
+
 type GroupedAssetGridProps = {
   assets: GridAsset[];
   groups: AssetQueryGroup[] | null;
@@ -12,6 +14,8 @@ type GroupedAssetGridProps = {
   onSelect: (assetId: string) => void;
   layout?: "thumb" | "detailed";
   onOpenInExplore?: (assetId: string) => void;
+  /** Thumb grid: optional zoom/pan on tile select when parent passes `onPreviewOpen`. */
+  onPreviewOpen?: (asset: PreviewAssetPick) => void;
   scanDefaultDpi?: number;
 };
 
@@ -22,6 +26,7 @@ export function GroupedAssetGrid({
   onSelect,
   layout = "thumb",
   onOpenInExplore,
+  onPreviewOpen,
   scanDefaultDpi,
 }: GroupedAssetGridProps) {
   if (assets.length === 0) {
@@ -51,6 +56,7 @@ export function GroupedAssetGrid({
         assets={list}
         selectedId={selectedId}
         onSelect={onSelect}
+        onPreviewOpen={onPreviewOpen}
       />
     );
   };

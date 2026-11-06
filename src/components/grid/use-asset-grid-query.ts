@@ -40,6 +40,26 @@ export function useAssetGridQuery(
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchGeneration, setFetchGeneration] = useState(0);
+
+  const removeAsset = useCallback((assetId: string) => {
+    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+    setGroups((prev) => {
+      if (!prev) return prev;
+      const next = prev
+        .map((g) => ({
+          ...g,
+          assets: g.assets.filter((a) => a.id !== assetId),
+        }))
+        .filter((g) => g.assets.length > 0);
+      return next.length > 0 ? next : null;
+    });
+    setTotal((t) => Math.max(0, t - 1));
+  }, []);
+
+  const refetch = useCallback(() => {
+    setFetchGeneration((g) => g + 1);
+  }, []);
 
   const setQuery = useCallback(
     (next: GridQuery | ((prev: GridQuery) => GridQuery)) => {
@@ -100,8 +120,8 @@ export function useAssetGridQuery(
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey/queryKey track scope/query
-  }, [scopeKey, queryKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey/queryKey/fetchGeneration track scope/query/refetch
+  }, [scopeKey, queryKey, fetchGeneration]);
 
   return {
     query,
@@ -111,5 +131,7 @@ export function useAssetGridQuery(
     total,
     loading,
     error,
+    removeAsset,
+    refetch,
   };
 }

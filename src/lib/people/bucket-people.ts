@@ -1,4 +1,4 @@
-export type PeopleTab = "people" | "faces";
+export type PeopleTab = "people" | "faces" | "duplicates";
 
 export function personIsNamed(person: { name?: string | null }): boolean {
   return Boolean(person.name?.trim());
@@ -21,6 +21,7 @@ export function peopleTabForSelection(
   person: { name?: string | null } | undefined,
   requestedTab: string | undefined,
 ): PeopleTab {
+  if (requestedTab === "duplicates") return "duplicates";
   if (person) return personIsNamed(person) ? "people" : "faces";
   return requestedTab === "faces" ? "faces" : "people";
 }
@@ -28,6 +29,7 @@ export function peopleTabForSelection(
 export function peoplePageHref(tab: PeopleTab, personId: string | null): string {
   const params = new URLSearchParams();
   if (tab === "faces") params.set("tab", "faces");
+  if (tab === "duplicates") params.set("tab", "duplicates");
   if (personId) params.set("personId", personId);
   const query = params.toString();
   return query ? `/people?${query}` : "/people";

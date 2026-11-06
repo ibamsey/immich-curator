@@ -10,10 +10,23 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-type CacheEntry = { value: ImageResolution | null; expires: number };
+/** Bounded in-memory cache (no `Date.now()` — avoids Next.js prerender / use cache instability). */
+const MAX_CACHE_ENTRIES = 500;
+const cache = new Map<string, ImageResolution | null>();
+const cacheOrder: string[] = [];
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const cache = new Map<string, CacheEntry>();
+function cacheSet(assetId: string, value: ImageResolution | null) {
+  if (cache.has(assetId)) {
+    cache.set(assetId, value);
+    return;
+  }
+  cache.set(assetId, value);
+  cacheOrder.push(assetId);
+  while (cacheOrder.length > MAX_CACHE_ENTRIES) {
+    const oldest = cacheOrder.shift();
+    if (oldest) cache.delete(oldest);
+  }
+}
 
 function libraryPathFromImmichOriginal(
   originalPath: string,
@@ -70,21 +83,20 @@ export async function readImageResolutionFromFile(
   assetId: string,
   originalPath: string | undefined,
 ): Promise<ImageResolution | null> {
-  const cached = cache.get(assetId);
-  if (cached && cached.expires > Date.now()) {
-    return cached.value;
+  if (cache.has(assetId)) {
+    return cache.get(assetId) ?? null;
   }
 
   const env = tryGetCuratorEnv();
   const libraryRoot = env?.immichLibraryRoot;
   if (!libraryRoot || !originalPath) {
-    cache.set(assetId, { value: null, expires: Date.now() + CACHE_TTL_MS });
+    cacheSet(assetId, null);
     return null;
   }
 
   const filePath = libraryPathFromImmichOriginal(originalPath, libraryRoot);
   if (!filePath) {
-    cache.set(assetId, { value: null, expires: Date.now() + CACHE_TTL_MS });
+    cacheSet(assetId, null);
     return null;
   }
 
@@ -102,13 +114,10 @@ export async function readImageResolutionFromFile(
       { timeout: 15_000, maxBuffer: 256 * 1024 },
     );
     const resolution = parseExiftoolJson(stdout);
-    cache.set(assetId, {
-      value: resolution,
-      expires: Date.now() + CACHE_TTL_MS,
-    });
+    cacheSet(assetId, resolution);
     return resolution;
   } catch {
-    cache.set(assetId, { value: null, expires: Date.now() + CACHE_TTL_MS });
+    cacheSet(assetId, null);
     return null;
   }
 }

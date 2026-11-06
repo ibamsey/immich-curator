@@ -1,14 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
+import { FaceNameBox } from "@/components/people/face-name-box";
 import {
   containedImageRect,
   faceBoxPercent,
-  faceDisplayLabel,
 } from "@/lib/people/face-box-layout";
+import {
+  patchCachedFacePerson,
+  subscribePersonRenames,
+  withPersonName,
+} from "@/lib/people/load-asset-faces";
 import type { ImmichAssetFace } from "@/lib/immich/types";
 
 type AssetPreviewWithFacesProps = {
@@ -16,6 +20,8 @@ type AssetPreviewWithFacesProps = {
   alt: string;
   className?: string;
   maxHeightClass?: string;
+  /** Click the preview image to open full zoom/pan (Explore RHS). */
+  onOpenFullPreview?: () => void;
 };
 
 type ImageLayout = {
@@ -30,11 +36,12 @@ export function AssetPreviewWithFaces({
   alt,
   className,
   maxHeightClass = "max-h-64",
+  onOpenFullPreview,
 }: AssetPreviewWithFacesProps) {
-  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [faces, setFaces] = useState<ImmichAssetFace[]>([]);
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
+  const [editingFaceId, setEditingFaceId] = useState<string | null>(null);
   const [layout, setLayout] = useState<ImageLayout | null>(null);
 
   useEffect(() => {
@@ -52,6 +59,12 @@ export function AssetPreviewWithFaces({
       cancelled = true;
     };
   }, [assetId]);
+
+  useEffect(() => {
+    return subscribePersonRenames((personId, name) => {
+      setFaces((prev) => withPersonName(prev, personId, name));
+    });
+  }, []);
 
   const measure = useCallback(() => {
     const container = containerRef.current;
@@ -82,12 +95,6 @@ export function AssetPreviewWithFaces({
       layout.naturalH,
     );
 
-  const goToPerson = (face: ImmichAssetFace) => {
-    const personId = face.person?.id;
-    if (!personId) return;
-    router.push(`/people?personId=${encodeURIComponent(personId)}`);
-  };
-
   return (
     <div
       ref={containerRef}
@@ -101,8 +108,36 @@ export function AssetPreviewWithFaces({
       <img
         src={assetThumbnailPath(assetId, "preview")}
         alt={alt}
-        className={cn("h-full w-full object-contain", maxHeightClass)}
+        className={cn(
+          "h-full w-full object-contain",
+          maxHeightClass,
+          onOpenFullPreview &&
+            "cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
         onLoad={measure}
+        tabIndex={onOpenFullPreview ? 0 : undefined}
+        role={onOpenFullPreview ? "button" : undefined}
+        aria-label={
+          onOpenFullPreview ? "Open full image preview" : undefined
+        }
+        onClick={
+          onOpenFullPreview
+            ? (e) => {
+                e.preventDefault();
+                onOpenFullPreview();
+              }
+            : undefined
+        }
+        onKeyDown={
+          onOpenFullPreview
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpenFullPreview();
+                }
+              }
+            : undefined
+        }
       />
       {imageRect && faces.length > 0 ? (
         <div
@@ -118,17 +153,18 @@ export function AssetPreviewWithFaces({
             const box = faceBoxPercent(face);
             if (!box) return null;
             const hovered = hoveredFaceId === face.id;
-            const clickable = Boolean(face.person?.id);
+            const editing = editingFaceId === face.id;
             return (
-              <button
+              <FaceNameBox
                 key={face.id}
-                type="button"
+                faceId={face.id}
+                personId={face.person?.id ?? null}
+                name={face.person?.name ?? ""}
                 className={cn(
-                  "pointer-events-auto absolute box-border border-2 transition-colors",
-                  hovered
+                  "box-border border-2 transition-colors",
+                  hovered || editing
                     ? "border-primary bg-primary/15"
                     : "border-transparent hover:border-primary/70",
-                  clickable ? "cursor-pointer" : "cursor-default",
                 )}
                 style={{
                   left: `${box.left}%`,
@@ -136,25 +172,30 @@ export function AssetPreviewWithFaces({
                   width: `${box.width}%`,
                   height: `${box.height}%`,
                 }}
+                showLabel={hovered || editing}
                 onMouseEnter={() => setHoveredFaceId(face.id)}
-                onMouseLeave={() => setHoveredFaceId(null)}
-                onDoubleClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  goToPerson(face);
+                onMouseLeave={() => {
+                  if (editingFaceId === face.id) return;
+                  setHoveredFaceId((current) =>
+                    current === face.id ? null : current,
+                  );
                 }}
-                aria-label={
-                  clickable
-                    ? `Double-click to open ${faceDisplayLabel(face)} in People`
-                    : faceDisplayLabel(face)
+                onEditingChange={(next) =>
+                  setEditingFaceId(next ? face.id : null)
                 }
-              >
-                {hovered ? (
-                  <span className="absolute -top-6 left-0 max-w-[12rem] truncate rounded bg-background/95 px-1.5 py-0.5 text-xs font-medium text-foreground shadow-sm">
-                    {faceDisplayLabel(face)}
-                  </span>
-                ) : null}
-              </button>
+                onSaved={(faceId, person) => {
+                  setFaces((prev) =>
+                    withPersonName(
+                      prev.map((item) =>
+                        item.id === faceId ? { ...item, person } : item,
+                      ),
+                      person.id,
+                      person.name,
+                    ),
+                  );
+                  patchCachedFacePerson(assetId, faceId, person);
+                }}
+              />
             );
           })}
         </div>

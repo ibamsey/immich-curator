@@ -8,6 +8,7 @@ import {
   MapPin,
   Users,
   Images,
+  Copy,
   Settings,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/people", label: "People", icon: Users },
   { href: "/locations", label: "Locations", icon: MapPin },
   { href: "/albums", label: "Albums", icon: Images },
+  { href: "/duplicates", label: "Duplicates", icon: Copy },
 ] as const;
 
 type SideNavProps = {

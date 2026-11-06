@@ -20,7 +20,7 @@
 | Region | Content |
 |--------|---------|
 | Main canvas | Two tabs. **People:** named persons only. **Faces:** unnamed cluster persons, then detections that have no person. Named tiles use **PersonIdentityEditor** (face thumb, name, DOB `dd/mm/yyyy`). Detection tiles are a square crop of the source photo plus a name field. |
-| RHS panel | A selected person: asset grid (single-click select); below grid: **face wheel** or sole **PersonIdentityEditor**. A selected detection: that one photo and a name field. Double-click a photo → Explore. |
+| RHS panel | A selected person: **Photos** tab — asset grid (single-click select); below grid: **face wheel** or sole **PersonIdentityEditor**. **Linked faces** tab — all faces Immich links to this person (target library), plus **unassigned** faces on scanned assets where Immich’s people similarity list for that face includes this person; **similarity** is the 1-based rank from `GET /api/people?closestAssetId=<faceId>` (lower = closer). Link / unlink with confirm. A selected detection: that one photo and a name field. Double-click a photo → Explore. |
 
 Giving a person or a detection a name moves that record onto **People** and selects it. Clearing a name moves the person back to **Faces**. Naming a detection creates one person for that face. Similar detections stay on **Faces** until Immich clusters them. A name that matches an existing person offers the same merge check as the person editor; merging assigns the face to that person instead of creating another.
 
@@ -51,6 +51,10 @@ sequenceDiagram
   UI->>API: GET /api/immich/people/id/assets
   API->>Immich: POST /api/search/metadata personIds albumIds
   API-->>UI: assets with description
+
+  UI->>API: GET /api/immich/people/id/faces
+  API->>Immich: metadata (person assets + library slice) + GET /api/faces per asset + GET /api/people?closestAssetId= per unassigned candidate
+  API-->>UI: linked faces + similar unassigned (ranked)
 
   UI->>API: PUT /api/immich/people/id
   API->>Immich: PUT /api/people/id
@@ -96,7 +100,8 @@ After **single-click** on an asset, `GET /api/immich/assets/{id}` supplies `peop
 | `faces-catalog.tsx` | Faces tab: clusters, then unidentified detections |
 | `detection-name-field.tsx` | Name a detection; merge check before create |
 | `detection-context-panel.tsx` | One photo and a name field |
-| `person-context-panel.tsx` | Panel + asset selection |
+| `person-context-panel.tsx` | Panel tabs (photos / linked faces) + asset selection |
+| `person-linked-faces-section.tsx` | Linked face grid; DELETE unlink via confirm |
 | `person-asset-grid.tsx` | Single-click select; double-click → Explore |
 | `asset-faces-section.tsx` | Fetch asset people; wheel vs sole editor |
 | `face-wheel-svg.tsx` | Hub-and-spoke SVG widget |

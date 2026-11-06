@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AssetActivityComments } from "@/components/explore/asset-activity-comments";
 import { AssetPreviewWithFaces } from "@/components/explore/asset-preview-with-faces";
 import { AssetMetadataFields } from "@/components/assets/asset-metadata-fields";
+import { AssetTagEditor } from "@/components/explore/asset-tag-editor";
 import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
 import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
@@ -24,6 +25,8 @@ export type AssetCurationPanelProps = {
   operatorCommentsEnabled: boolean;
   onAssetUpdated: (asset: ImmichAssetWithEnrichment) => void;
   onAssetDeleted: (assetId: string) => void;
+  /** Open zoom/pan full-image modal (e.g. from RHS preview). Grid selects only. */
+  onOpenFullPreview?: () => void;
 };
 
 function toDatetimeLocalValue(iso: string): string {
@@ -49,6 +52,7 @@ export function AssetCurationPanel({
   operatorCommentsEnabled,
   onAssetUpdated,
   onAssetDeleted,
+  onOpenFullPreview,
   defaultScanDpi = 600,
 }: AssetCurationPanelProps) {
   if (loading) {
@@ -68,6 +72,13 @@ export function AssetCurationPanel({
       <AssetPreviewWithFaces
         assetId={assetId}
         alt={asset.originalFileName}
+        onOpenFullPreview={onOpenFullPreview}
+      />
+      <AssetTagEditor
+        key={`tags-${asset.id}`}
+        assetId={assetId}
+        asset={asset}
+        onAssetUpdated={onAssetUpdated}
       />
       <AssetMetadataEditor
         key={asset.id}
@@ -79,6 +90,7 @@ export function AssetCurationPanel({
         asset={asset}
         enrichment={asset.curatorEnrichment}
         defaultScanDpi={defaultScanDpi}
+        hideStoredIds={["tags"]}
       />
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

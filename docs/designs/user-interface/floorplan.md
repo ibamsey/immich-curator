@@ -73,7 +73,7 @@ Header is **context-aware**: icons enable/disable based on route and selection. 
 
 | Action | Maps to |
 |--------|---------|
-| Tags | Panel → tag editor [UC-005](../../use-cases/UC-005-ian-assign-tags-to-asset.md) |
+| Tags | Panel → tag editor [UC-005](../../use-cases/UC-005-ian-assign-tags-to-asset.md), [DES-007](../DES-007-tag-editor.md) (writes as the target) |
 | Location | Panel → map pin [UC-006](../../use-cases/UC-006-ian-set-asset-map-location.md) |
 | Description | Panel → text edit [UC-007](../../use-cases/UC-007-ian-correct-asset-description.md) |
 | External | Open asset in Immich (new tab, Geoff/Ian URL as configured) |

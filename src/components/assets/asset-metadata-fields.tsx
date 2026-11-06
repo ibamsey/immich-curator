@@ -14,6 +14,7 @@ import type {
   CuratorAssetEnrichment,
   ImmichAsset,
 } from "@/lib/immich/types";
+import { tagPath } from "@/lib/immich/tag-policy";
 
 function Field({
   label,
@@ -63,7 +64,7 @@ function storedValue(
     case "originalFileName":
       return asset.originalFileName;
     case "tags":
-      return asset.tags?.map((t) => t.name).join(", ") || "—";
+      return asset.tags?.map((t) => tagPath(t)).join(", ") || "—";
     case "pixelDimensions": {
       const px = getPixelDimensions(asset);
       return px ? `${px.widthPx} × ${px.heightPx} px` : "—";
@@ -89,12 +90,14 @@ export type AssetMetadataFieldsProps = {
   asset: ImmichAsset | GridAsset;
   enrichment?: CuratorAssetEnrichment;
   defaultScanDpi?: number;
+  hideStoredIds?: string[];
 };
 
 export function AssetMetadataFields({
   asset,
   enrichment,
   defaultScanDpi = 600,
+  hideStoredIds,
 }: AssetMetadataFieldsProps) {
   const gridAsset = asset as GridAsset;
   const ctx = buildComputeContext(gridAsset, enrichment, defaultScanDpi);
@@ -114,6 +117,7 @@ export function AssetMetadataFields({
     <div className="space-y-3">
       {ASSET_METADATA_DISPLAY_ROWS.map((row) => {
         if (row.kind === "stored") {
+          if (hideStoredIds?.includes(row.id)) return null;
           return (
             <Field
               key={row.id}

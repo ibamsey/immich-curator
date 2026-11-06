@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { assignFaceToPerson, nameUnassignedFace } from "@/lib/immich/faces";
+import {
+  assignFaceToPerson,
+  nameUnassignedFace,
+  unlinkFaceFromPerson,
+} from "@/lib/immich/faces";
 
 type Params = { params: Promise<{ faceId: string }> };
 
@@ -23,6 +27,17 @@ export async function PUT(request: Request, { params }: Params) {
       return NextResponse.json({ message: e.message }, { status: 400 });
     }
     const message = e instanceof Error ? e.message : "Failed to name face";
+    return NextResponse.json({ message }, { status: 502 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: Params) {
+  try {
+    const { faceId } = await params;
+    await unlinkFaceFromPerson(faceId);
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to unlink face";
     return NextResponse.json({ message }, { status: 502 });
   }
 }

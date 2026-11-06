@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,8 @@ type ConfirmDialogProps = {
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
+  /** Extra body below the description (e.g. merge direction details). */
+  children?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: "default" | "destructive";
@@ -27,6 +30,7 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
+  children,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   confirmVariant = "default",
@@ -39,6 +43,11 @@ export function ConfirmDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
+          {children ? (
+            <div className="text-sm text-foreground [&_ul]:mt-2 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:space-y-1">
+              {children}
+            </div>
+          ) : null}
         </DialogHeader>
         <DialogFooter className="border-t-0 bg-transparent p-0 sm:justify-end">
           <Button

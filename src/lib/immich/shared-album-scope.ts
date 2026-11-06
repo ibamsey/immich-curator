@@ -53,6 +53,70 @@ export async function personHasAssetsInSharedAlbums(
   return data.assets.total > 0;
 }
 
+export async function getPersonAssetIdsInSharedAlbums(
+  personId: string,
+  sharedAlbumIds: string[],
+): Promise<string[]> {
+  if (sharedAlbumIds.length === 0) return [];
+  const ids: string[] = [];
+  let page = 1;
+  for (;;) {
+    const data = await immichJson<ImmichSearchAssetsResponse>(
+      "/api/search/metadata",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          personIds: [personId],
+          albumIds: sharedAlbumIds,
+          page,
+          size: SEARCH_PAGE_SIZE,
+        }),
+      },
+    );
+    for (const asset of data.assets.items) ids.push(asset.id);
+    if (
+      data.assets.items.length < SEARCH_PAGE_SIZE ||
+      page * SEARCH_PAGE_SIZE >= data.assets.total
+    ) {
+      break;
+    }
+    page += 1;
+    if (page > 50) break;
+  }
+  return ids;
+}
+
+/** All assets Immich associates with this person (library-wide metadata search). */
+export async function getPersonAssetIdsInLibrary(
+  personId: string,
+): Promise<string[]> {
+  const ids: string[] = [];
+  let page = 1;
+  for (;;) {
+    const data = await immichJson<ImmichSearchAssetsResponse>(
+      "/api/search/metadata",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          personIds: [personId],
+          page,
+          size: SEARCH_PAGE_SIZE,
+        }),
+      },
+    );
+    for (const asset of data.assets.items) ids.push(asset.id);
+    if (
+      data.assets.items.length < SEARCH_PAGE_SIZE ||
+      page * SEARCH_PAGE_SIZE >= data.assets.total
+    ) {
+      break;
+    }
+    page += 1;
+    if (page > 200) break;
+  }
+  return ids;
+}
+
 export async function getPersonAssetsInSharedAlbums(
   personId: string,
   sharedAlbumIds: string[],

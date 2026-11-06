@@ -20,6 +20,7 @@
 
 | Section | Actor | Behaviour |
 |---------|-------|-------------|
+| Image preview (faces overlay) | Target read | Selecting a grid tile opens the panel; **click the preview image** to open the full-size zoom/pan modal ([`AssetPreviewModal`](../../src/components/grid/asset-preview-modal.tsx)). The grid alone does not open that modal. |
 | Preview + read-only meta | Target read | [`AssetMetadataFields`](../../src/components/assets/asset-metadata-fields.tsx): filename, tags, pixel dimensions, **physical size (mm)**, **area (mm²)**, dates ([ADR-0004](../adr/0004-computed-asset-metadata-fields.md)) |
 | Description | Target write | Textarea + Save |
 | Captured date | Target write | `localDateTime` control + Save |

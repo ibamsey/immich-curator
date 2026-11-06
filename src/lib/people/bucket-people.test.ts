@@ -34,12 +34,19 @@ describe("peopleTabForSelection", () => {
     expect(peopleTabForSelection(undefined, "faces")).toBe("faces");
     expect(peopleTabForSelection(undefined, undefined)).toBe("people");
   });
+
+  it("keeps Duplicates when requested even if a named person is linked", () => {
+    expect(peopleTabForSelection({ name: "Ada" }, "duplicates")).toBe(
+      "duplicates",
+    );
+  });
 });
 
 describe("peoplePageHref", () => {
   it("omits the tab param on People and keeps a person id", () => {
     expect(peoplePageHref("people", "abc")).toBe("/people?personId=abc");
     expect(peoplePageHref("faces", null)).toBe("/people?tab=faces");
+    expect(peoplePageHref("duplicates", null)).toBe("/people?tab=duplicates");
     expect(peoplePageHref("people", null)).toBe("/people");
   });
 });

@@ -9,7 +9,7 @@ import type {
   AdminSettingsPut,
   LocalConfigFile,
 } from "@/lib/config/admin-settings-schema";
-import { resolveOperatorUserId } from "@/lib/immich/users";
+import { resolveOperatorUserIdCached } from "@/lib/immich/users";
 import { loadOperatorContext } from "@/lib/server/operator-context";
 import { loadShellContext } from "@/lib/server/shell-context";
 import type { ImmichUser } from "@/lib/immich/types";
@@ -90,7 +90,7 @@ export async function buildSanitizedAdminSettings(): Promise<SanitizedAdminSetti
   const env = tryGetCuratorEnv();
   const shell = await loadShellContext();
   const operatorCtx = await loadOperatorContext();
-  const operatorUserId = env ? await resolveOperatorUserId() : null;
+  const operatorUserId = env ? await resolveOperatorUserIdCached() : null;
 
   let targetProfile: SanitizedAdminSettings["targetProfile"] = null;
   if (shell.connectionOk && env) {

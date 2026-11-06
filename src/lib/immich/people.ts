@@ -31,6 +31,38 @@ export async function getPerson(personId: string): Promise<ImmichPerson> {
   return immichJson<ImmichPerson>(`/api/people/${personId}`);
 }
 
+/**
+ * Immich ranks people by facial similarity to a **face** (`closestAssetId` — same parameter
+ * the official UI uses when picking a person for a face).
+ * Returns 1-based rank of {@param targetPersonId} in that order, or null if not in range.
+ */
+export async function getPersonSimilarityRankToFace(
+  targetPersonId: string,
+  faceId: string,
+  opts: { maxPages?: number; pageSize?: number; withHidden?: boolean } = {},
+): Promise<number | null> {
+  const pageSize = opts.pageSize ?? 500;
+  const maxPages = opts.maxPages ?? 4;
+  const withHidden = opts.withHidden ?? true;
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams({
+      closestAssetId: faceId,
+      page: String(page),
+      size: String(pageSize),
+      withHidden: String(withHidden),
+    });
+    const data = await immichJson<ImmichPeopleResponse>(
+      `/api/people?${params.toString()}`,
+    );
+    const idx = data.people.findIndex((p) => p.id === targetPersonId);
+    if (idx >= 0) {
+      return (page - 1) * pageSize + idx + 1;
+    }
+    if (!data.hasNextPage) break;
+  }
+  return null;
+}
+
 export async function updatePerson(
   personId: string,
   payload: PersonUpdatePayload,
@@ -38,6 +70,13 @@ export async function updatePerson(
   return immichJson<ImmichPerson>(`/api/people/${personId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
+  });
+}
+
+/** Remove a person from Immich (`DELETE /api/people/:id` → 204). */
+export async function deletePerson(personId: string): Promise<void> {
+  await immichJson<void>(`/api/people/${personId}`, {
+    method: "DELETE",
   });
 }
 

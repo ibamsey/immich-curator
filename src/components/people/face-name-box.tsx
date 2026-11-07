@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { useRouter } from "next/navigation";
+import { Link2OffIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import type { ImmichPerson } from "@/lib/immich/types";
 
@@ -19,6 +28,8 @@ type FaceNameBoxProps = {
   onMouseLeave?: () => void;
   onEditingChange?: (editing: boolean) => void;
   onSaved: (faceId: string, person: ImmichPerson) => void;
+  /** After unlinking; omitted if callers do not need to refresh face lists. */
+  onUnlinked?: (faceId: string) => void;
 };
 
 function fieldWidth(text: string): string {
@@ -36,6 +47,13 @@ function chipPlacement(style?: CSSProperties): string {
   );
 }
 
+/** Expand the interactive box so the name chip (drawn outside the face %) still counts as “inside”. */
+function hitSlopClass(style?: CSSProperties): string {
+  const top = typeof style?.top === "string" ? parseFloat(style.top) : 0;
+  if (top >= 20) return "-mt-5 pt-5";
+  return "-mb-4 pb-4";
+}
+
 export function FaceNameBox({
   faceId,
   personId,
@@ -47,19 +65,39 @@ export function FaceNameBox({
   onMouseLeave,
   onEditingChange,
   onSaved,
+  onUnlinked,
 }: FaceNameBoxProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  /** Linked face: pointer is over the rectangle (rollover shows chip). */
+  const [hoverInside, setHoverInside] = useState(false);
+  /** Linked face: rectangle was clicked to select (sticky until toggle / unlink / navigate). */
+  const [selected, setSelected] = useState(false);
   const [draft, setDraft] = useState(name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
   const clickTimer = useRef<number | null>(null);
   const editingRef = useRef(false);
   const personIdRef = useRef(personId);
-  personIdRef.current = personId;
+  const blurSaveTimer = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    personIdRef.current = personId;
+  }, [personId]);
+
+  useEffect(() => {
+    if (!editingRef.current) {
+      setDraft(name);
+    }
+  }, [name]);
 
   const label = name.trim() || "Unnamed";
   const placement = chipPlacement(style);
+  const hitSlop = hitSlopClass(style);
+  const isLinked = Boolean(personId);
 
   const setEditingState = (next: boolean) => {
     editingRef.current = next;
@@ -75,18 +113,61 @@ export function FaceNameBox({
 
   useEffect(() => clearClickTimer, []);
 
+  useEffect(() => {
+    return () => {
+      if (blurSaveTimer.current != null) {
+        window.clearTimeout(blurSaveTimer.current);
+        blurSaveTimer.current = null;
+      }
+    };
+  }, []);
+
+  /** Unlinked: focus input when entering edit from rectangle click. */
+  useEffect(() => {
+    if (editing && !isLinked) {
+      queueMicrotask(() => inputRef.current?.focus());
+    }
+  }, [editing, isLinked]);
+
   const openPerson = () => {
     const id = personIdRef.current;
     if (!id) return;
     clearClickTimer();
+    setSelected(false);
     setEditingState(false);
     router.push(`/people?personId=${encodeURIComponent(id)}`);
+  };
+
+  const runUnlink = async () => {
+    if (!personId) return;
+    setUnlinking(true);
+    try {
+      const res = await fetch(`/api/immich/faces/${faceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(data.message ?? "Unlink failed");
+      }
+      clearClickTimer();
+      setSelected(false);
+      setEditingState(false);
+      setUnlinkOpen(false);
+      onUnlinked?.(faceId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unlink failed");
+    } finally {
+      setUnlinking(false);
+    }
   };
 
   const cancel = () => {
     setDraft(name);
     setError(null);
     setEditingState(false);
+    if (isLinked) {
+      setSelected(false);
+    }
   };
 
   const save = async () => {
@@ -130,84 +211,203 @@ export function FaceNameBox({
     "max-w-56 rounded-sm bg-background/95 px-1.5 py-0.5 text-left text-[10px] font-medium leading-tight text-foreground shadow-sm",
   );
 
-  return (
-    <div
-      className={cn("pointer-events-auto absolute cursor-pointer", className)}
-      style={style}
-      title={
-        personId
-          ? "Click to edit name. Double-click to open in People."
-          : "Click to name this face."
-      }
-      aria-label={
-        personId
-          ? `${label}. Click to edit, double-click to open in People.`
-          : `${label}. Click to name this face.`
-      }
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onMouseDown={(e) => e.stopPropagation()}
+  /** Selected or editing: keep chip visible even if parent `showLabel` went false on hover-out. */
+  const showLinkedChrome =
+    isLinked &&
+    (selected || editing || (showLabel && hoverInside));
+  const showUnlink = showLinkedChrome;
+  const showChipContents = isLinked ? showLinkedChrome : showLabel || editing;
+
+  const unlinkButton = showUnlink ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className="size-5 shrink-0 text-muted-foreground hover:text-destructive"
+      title="Unlink face from person"
+      aria-label="Unlink face from person"
+      disabled={unlinking}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
         clearClickTimer();
-        clickTimer.current = window.setTimeout(() => {
-          clickTimer.current = null;
-          setDraft(name);
-          setError(null);
-          setEditingState(true);
-        }, CLICK_DELAY_MS);
+        setError(null);
+        setUnlinkOpen(true);
       }}
-      onDoubleClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openPerson();
-      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          disabled={saving}
-          aria-label={`Edit name for ${label}`}
-          title={error ?? "Enter to save, Esc to cancel"}
-          style={{ width: fieldWidth(draft || label) }}
-          className={cn(
-            chipClass,
-            "pointer-events-auto border outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            error ? "border-destructive" : "border-input",
-          )}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setError(null);
-          }}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={() => {
-            if (!editingRef.current) return;
-            void save();
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void save();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            }
-          }}
-        />
-      ) : showLabel ? (
-        <span
-          className={cn(chipClass, "pointer-events-none truncate")}
-          style={{ width: fieldWidth(label) }}
-        >
-          {label}
-        </span>
-      ) : null}
-    </div>
+      <Link2OffIcon className="size-3.5" />
+    </Button>
+  ) : null;
+
+  const handleRootClick = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearClickTimer();
+
+    if (isLinked) {
+      if (!editing) {
+        setSelected((s) => !s);
+        setDraft(name);
+        setError(null);
+      }
+      return;
+    }
+
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      setDraft(name);
+      setError(null);
+      setEditingState(true);
+    }, CLICK_DELAY_MS);
+  };
+
+  const handleRootDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearClickTimer();
+    if (isLinked) {
+      openPerson();
+    }
+  };
+
+  return (
+    <>
+      <div
+        data-face-name-root
+        className={cn(
+          "pointer-events-auto absolute cursor-pointer",
+          hitSlop,
+          isLinked && selected && !editing && "ring-2 ring-primary ring-offset-1 ring-offset-background/80",
+          className,
+        )}
+        style={style}
+        title={
+          isLinked
+            ? "Hover or select to show name. Click name to edit. Double-click to open in People."
+            : "Click to name this face."
+        }
+        aria-label={
+          isLinked
+            ? `${label}. Hover or click rectangle to select; click name to edit.`
+            : `${label}. Click to name this face.`
+        }
+        aria-pressed={isLinked ? selected || editing : undefined}
+        onMouseEnter={() => {
+          setHoverInside(true);
+          onMouseEnter?.();
+        }}
+        onMouseLeave={() => {
+          setHoverInside(false);
+          onMouseLeave?.();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={handleRootClick}
+        onDoubleClick={handleRootDoubleClick}
+      >
+        {editing ? (
+          <div
+            className={cn(
+              chipClass,
+              "flex items-center gap-0.5 pointer-events-auto",
+            )}
+          >
+            {unlinkButton}
+            <input
+              ref={inputRef}
+              autoFocus
+              value={draft}
+              disabled={saving}
+              aria-label={`Edit name for ${label}`}
+              title={error ?? "Enter to save, Esc to cancel"}
+              style={{ width: fieldWidth(draft || label) }}
+              className={cn(
+                "min-w-0 max-w-[min(14rem,56vw)] flex-1 rounded-sm border px-1 py-0 text-[10px] font-medium leading-tight outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                error ? "border-destructive" : "border-input bg-background",
+              )}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setError(null);
+              }}
+              onFocus={(e) => {
+                if (blurSaveTimer.current != null) {
+                  window.clearTimeout(blurSaveTimer.current);
+                  blurSaveTimer.current = null;
+                }
+                e.currentTarget.select();
+              }}
+              onBlur={() => {
+                if (!editingRef.current) return;
+                if (blurSaveTimer.current != null) {
+                  window.clearTimeout(blurSaveTimer.current);
+                }
+                blurSaveTimer.current = window.setTimeout(() => {
+                  blurSaveTimer.current = null;
+                  if (!editingRef.current) return;
+                  void save();
+                }, 0);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void save();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancel();
+                }
+              }}
+            />
+          </div>
+        ) : showChipContents ? (
+          <div
+            className={cn(
+              chipClass,
+              "flex items-center gap-0.5 pointer-events-auto",
+            )}
+          >
+            {unlinkButton}
+            <button
+              type="button"
+              className={cn(
+                "min-w-0 max-w-[min(14rem,56vw)] flex-1 cursor-pointer truncate rounded-sm px-0.5 text-left hover:bg-muted/80",
+                isLinked ? "pointer-events-auto" : "pointer-events-none",
+              )}
+              tabIndex={isLinked ? 0 : -1}
+              title={isLinked ? "Edit name" : undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                clearClickTimer();
+                if (!isLinked) return;
+                setDraft(name);
+                setError(null);
+                setEditingState(true);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {label}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <ConfirmDialog
+        open={unlinkOpen}
+        onOpenChange={setUnlinkOpen}
+        title="Unlink this face?"
+        description="This removes the face from the linked person in Immich. You can assign a name again afterward."
+        confirmLabel="Unlink"
+        confirmVariant="destructive"
+        loading={unlinking}
+        onConfirm={runUnlink}
+      />
+    </>
   );
 }

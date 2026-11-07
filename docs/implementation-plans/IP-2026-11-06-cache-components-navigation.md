@@ -1,5 +1,7 @@
 # IP-2026-11-06: Cache Components navigation and prerender hygiene
 
+**Status:** Done
+
 ## Context
 
 The app uses Next.js 16 with **`cacheComponents`** and **`partialPrefetching`** enabled. That mode validates:
@@ -10,44 +12,45 @@ The app uses Next.js 16 with **`cacheComponents`** and **`partialPrefetching`** 
 
 Earlier issues in this repo: People route (uncached Immich + `searchParams`), `Date.now()` prerender overlay, and **`connection()`** placement (must not block the page segment above Suspense if instant navigation is desired).
 
-## Current target pattern (implemented for People & Explore)
+## Current target pattern (all `(app)` data routes)
 
-- **Page**: `await loadShellContext()` only; `<Suspense fallback={...}>` wraps a single async child.
-- **Data child**: `await connection()` (if needed for time-dependent stack), `await searchParams` (or `params`), then Immich / uncached work.
+- **Page without URL props:** `await loadShellContext()` then `<Suspense>`; **`export const instant = true`** where desired.
+- **Page with `searchParams` and `instant = true`:** **`page.tsx` must be synchronous** (no `await` above Suspense). Pass `searchParams` as a Promise into `*-data.tsx`. **`await loadShellContext()` lives in the data child** with URL resolution and Immich work. Fallback UI is sync (placeholder shell only).
+- **Data child:** `await connection()` when needed, then `loadShellContext` if page is sync-only, then `await searchParams` / `params`, then Immich / uncached work.
 
-## Refactoring plan (remaining routes and consistency)
+## Refactoring plan — completion checklist
 
 ### Phase 1 — Align all `searchParams` routes
 
-- [ ] Audit `src/app/(app)/**/page.tsx` for `await searchParams` or `await params` **above** `<Suspense>`.
-- [ ] Move URL resolution into the existing `*-data.tsx` (or add one): pass **`searchParams` promise** (or `params` promise) as a prop; await inside the Suspense child.
+- [x] Audit `src/app/(app)/**/page.tsx` for `await searchParams` or `await params` **above** `<Suspense>`.
+- [x] URL resolution lives in `*-data.tsx` with **`searchParams` promise** passed from the page (Explore, People).
 
 ### Phase 2 — `connection()` placement
 
-- [ ] Keep **`connection()`** only inside Suspense-backed async children (or after entering a dynamic stage), not as the first line of the page when the page also needs to stay “instant” under validation.
-- [ ] For routes with **no** `searchParams` and no time-sensitive deps, consider **removing** `connection()` and rely on natural dynamic boundaries; re-run dev overlay after each change.
+- [x] **`connection()`** only inside Suspense-backed async children (Explore, People, Albums, Duplicates, Admin data components).
+- [x] **`explore/loading.tsx`**: removed redundant `connection()`; only `loadShellContext` + fallback UI.
 
 ### Phase 3 — Heavy / uncached pages without Suspense
 
-- [ ] **Albums, Duplicates, Admin, Locations**: mirror Explore/People — thin page + `Suspense` + `*-data.tsx` + shared shell fallback pattern (or `loading.tsx` where a route-level skeleton is enough).
-- [ ] Ensure **`loadShellContext()`** stays cached (`"use cache"` + short `cacheLife`) and is safe to call from the page shell.
+- [x] **Albums, Duplicates, Admin, Locations**: thin page + `Suspense` + `*-data.tsx` + `*-fallback.tsx`.
+- [x] **`loadShellContext()`** remains cached in [`src/lib/server/shell-context.ts`](../../src/lib/server/shell-context.ts).
 
 ### Phase 4 — Instant segment config
 
-- [ ] `(app)/layout.tsx` uses `export const instant = false` to allow blocking at the group layout where needed.
-- [ ] Optionally set **`instant = true`** on specific leaf pages **after** Phases 1–3 so Next validates only segments that are meant to be instant (see [instant route config](https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config/instant)).
+- [x] `(app)/layout.tsx` keeps `export const instant = false` where needed for the group.
+- [x] Leaf **`export const instant = true`** on Explore, People, Albums, Duplicates, Admin, Locations.
 
 ### Phase 5 — Tooling and cleanup
 
-- [ ] Fix **ESLint** `react-hooks/refs` violations (e.g. ref updates during render) so `npm run lint` passes in CI.
-- [ ] Add **`immich.code-workspace`** to `.gitignore` if it stays local-only.
-- [ ] Document this pattern in `AGENTS.md` (short “Cache Components” subsection: Suspense + URL data + `connection()`).
+- [x] **ESLint**: refs during render fixed (`asset-grid`, `face-name-box`); `person-identity-editor` ref sync via effect; **no JSX in try/catch** in `duplicates-data` for `react-hooks/error-boundaries`.
+- [x] **`immich.code-workspace`** added to `.gitignore`.
+- [x] **Agent docs:** [`.cursor/skills/immich-curator-cache-components/SKILL.md`](../../.cursor/skills/immich-curator-cache-components/SKILL.md), pointer in [`AGENTS.md`](../../AGENTS.md), cross-link in [`.cursor/rules/docs-and-agentic-workflow.mdc`](../../.cursor/rules/docs-and-agentic-workflow.mdc).
 
 ## Verification
 
-- `npm run dev` — navigate between `/explore`, `/people`, `/albums`, `/duplicates`; no dev overlay for uncached data, URL outside Suspense, or unstable `Date` where fixed.
-- `npm run build`
-- Optional: enable stricter instant validation in `next.config` only after routes are migrated.
+- [x] `npm run lint`
+- [x] `npm run build`
+- [x] Manual (wrap-up 2026-11-06, dartmoor): `npm run dev` — navigate `/explore`, `/people`, `/albums`, `/duplicates`, `/admin`, `/locations` (HTTP smoke + no blocking overlay on exercised routes); `npm run build` + `npm run lint` clean after `AppShellRouteFallback` + SideNav prefetch.
 
 ## References
 

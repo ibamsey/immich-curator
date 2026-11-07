@@ -47,6 +47,6 @@ Create `IP-YYYY-MM-DD-slug.md`:
 | [IP-2026-11-04-computed-physical-size.md](./IP-2026-11-04-computed-physical-size.md) | Computed physical size (ADR-0004) | Done |
 | [IP-2026-11-04-uc005-tags.md](./IP-2026-11-04-uc005-tags.md) | UC-005 tag editor as the target | Done |
 | [IP-2026-11-06-duplicates-merge-and-face-dnd.md](./IP-2026-11-06-duplicates-merge-and-face-dnd.md) | Duplicates tab: merge selection + face unlink/DnD | Done |
-| [IP-2026-11-06-cache-components-navigation.md](./IP-2026-11-06-cache-components-navigation.md) | Cache Components: Suspense, URL data, `connection()` | In progress |
+| [IP-2026-11-06-cache-components-navigation.md](./IP-2026-11-06-cache-components-navigation.md) | Cache Components: Suspense, URL data, `connection()` | Done |
 
 Suggested first plan: `IP-*-immich-api-client-and-album-list` after UC for album queue exists.

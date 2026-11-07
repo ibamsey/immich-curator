@@ -10,6 +10,7 @@ import {
 } from "@/lib/people/face-box-layout";
 import {
   patchCachedFacePerson,
+  patchCachedFaceUnlinked,
   subscribePersonRenames,
   withPersonName,
 } from "@/lib/people/load-asset-faces";
@@ -42,7 +43,12 @@ export function AssetPreviewWithFaces({
   const [faces, setFaces] = useState<ImmichAssetFace[]>([]);
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
   const [editingFaceId, setEditingFaceId] = useState<string | null>(null);
+  const editingFaceIdRef = useRef<string | null>(null);
   const [layout, setLayout] = useState<ImageLayout | null>(null);
+
+  useEffect(() => {
+    editingFaceIdRef.current = editingFaceId;
+  }, [editingFaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,7 +162,7 @@ export function AssetPreviewWithFaces({
             const editing = editingFaceId === face.id;
             return (
               <FaceNameBox
-                key={face.id}
+                key={`${face.id}-${face.person?.id ?? "unlinked"}`}
                 faceId={face.id}
                 personId={face.person?.id ?? null}
                 name={face.person?.name ?? ""}
@@ -175,7 +181,7 @@ export function AssetPreviewWithFaces({
                 showLabel={hovered || editing}
                 onMouseEnter={() => setHoveredFaceId(face.id)}
                 onMouseLeave={() => {
-                  if (editingFaceId === face.id) return;
+                  if (editingFaceIdRef.current === face.id) return;
                   setHoveredFaceId((current) =>
                     current === face.id ? null : current,
                   );
@@ -194,6 +200,14 @@ export function AssetPreviewWithFaces({
                     ),
                   );
                   patchCachedFacePerson(assetId, faceId, person);
+                }}
+                onUnlinked={(faceId) => {
+                  setFaces((prev) =>
+                    prev.map((item) =>
+                      item.id === faceId ? { ...item, person: null } : item,
+                    ),
+                  );
+                  patchCachedFaceUnlinked(assetId, faceId);
                 }}
               />
             );

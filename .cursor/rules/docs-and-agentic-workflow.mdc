@@ -16,4 +16,6 @@ When planning or implementing features in this repo:
 
 For Next.js specifics, follow the `nextjs-agent-rules` block in [AGENTS.md](../../AGENTS.md).
 
-**Runtime:** On dartmoor, keep **`immich-curator`** user systemd active (`systemctl --user status immich-curator`). After app code changes: `npm run build && systemctl --user restart immich-curator`.
+**Cache Components (App Router):** Before editing routes under `src/app/(app)/`, read the Cursor skill [.cursor/skills/immich-curator-cache-components/SKILL.md](../../.cursor/skills/immich-curator-cache-components/SKILL.md) so Suspense boundaries, URL data, and `connection()` match Next 16 + `cacheComponents` expectations.
+
+**Runtime:** **Development** — run `npm run dev` and verify against that server (resolve port 3000 vs systemd as in [AGENTS.md](../../AGENTS.md)). **Production** — keep **`immich-curator`** user systemd active (`systemctl --user status immich-curator`); after app code changes that should hit the deployed app, **run** `npm run build && systemctl --user restart immich-curator` in the agent session right away (not a “pull then you run it” note).

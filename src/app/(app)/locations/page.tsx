@@ -1,9 +1,16 @@
-import { connection } from "next/server";
+import { Suspense } from "react";
 import { loadShellContext } from "@/lib/server/shell-context";
-import { StubPage } from "@/components/stub-page";
+import { LocationsData } from "./locations-data";
+import { LocationsFallback } from "./locations-fallback";
+
+export const instant = true;
 
 export default async function LocationsPage() {
-  await connection();
   const shell = await loadShellContext();
-  return <StubPage shell={shell} title="Locations" />;
+
+  return (
+    <Suspense fallback={<LocationsFallback shell={shell} />}>
+      <LocationsData shell={shell} />
+    </Suspense>
+  );
 }

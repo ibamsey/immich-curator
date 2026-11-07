@@ -5,7 +5,7 @@ import { PersonAssetList } from "@/components/grid/person-asset-list";
 import type { AssetQueryGroup } from "@/lib/assets/grid-query-types";
 import type { GridAsset } from "@/lib/assets/grid-asset";
 
-type PreviewAssetPick = Pick<GridAsset, "id" | "originalFileName">;
+type PreviewAssetPick = Pick<GridAsset, "id" | "originalFileName" | "type">;
 
 type GroupedAssetGridProps = {
   assets: GridAsset[];

@@ -1,12 +1,19 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { AssetGridToolbar } from "@/components/grid/asset-grid-toolbar";
 import { GroupedAssetGrid } from "@/components/grid/grouped-asset-grid";
 import {
   AssetPreviewModal,
   type AssetPreviewTarget,
 } from "@/components/grid/asset-preview-modal";
+import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 import { useAssetGridQuery } from "@/components/grid/use-asset-grid-query";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import type { GridQueryScope } from "@/lib/assets/grid-query-types";
@@ -69,6 +76,19 @@ export const QueryableAssetGridSection = forwardRef<
     persistQuery: showToolbar && persistQuery,
   });
 
+  const onPreviewAssetReplaced = useCallback(
+    (oldId: string, next: ImmichAssetWithEnrichment) => {
+      removeAsset(oldId);
+      setGridPreviewAsset({
+        id: next.id,
+        originalFileName: next.originalFileName,
+        type: next.type,
+      });
+      refetch();
+    },
+    [removeAsset, refetch],
+  );
+
   useImperativeHandle(ref, () => ({ removeAsset, refetch }), [
     removeAsset,
     refetch,
@@ -130,6 +150,7 @@ export const QueryableAssetGridSection = forwardRef<
             if (!open) setGridPreviewAsset(null);
           }}
           asset={gridPreviewAsset}
+          onAssetReplaced={onPreviewAssetReplaced}
         />
       ) : null}
     </div>

@@ -54,6 +54,16 @@ export function patchCachedFacePerson(
   for (const listener of renameListeners) listener(person.id, person.name);
 }
 
+/** After `DELETE /api/immich/faces/:id` unlinks the face from its person. */
+export function patchCachedFaceUnlinked(assetId: string, faceId: string) {
+  const faces = cache.get(assetId);
+  if (!faces) return;
+  const next = faces.map((face) =>
+    face.id === faceId ? { ...face, person: null } : face,
+  );
+  cache.set(assetId, next);
+}
+
 export function subscribePersonRenames(
   listener: (personId: string, name: string) => void,
 ): () => void {

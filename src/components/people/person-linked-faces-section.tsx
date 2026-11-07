@@ -42,7 +42,7 @@ function FaceRowThumb({
   onOpenFullImage,
 }: {
   face: UnassignedFace;
-  onOpenFullImage: (assetId: string) => void;
+  onOpenFullImage: (assetId: string, faceId: string) => void;
 }) {
   const box = faceBoxPercent({
     id: face.id,
@@ -58,7 +58,7 @@ function FaceRowThumb({
   return (
     <button
       type="button"
-      onClick={() => onOpenFullImage(face.assetId)}
+      onClick={() => onOpenFullImage(face.assetId, face.id)}
       className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-sm bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90"
       title="Open full image preview (zoom/pan)"
       aria-label="Open full image preview"
@@ -94,24 +94,37 @@ export function PersonLinkedFacesSection({
     null,
   );
 
-  const openAssetPreview = useCallback((assetId: string) => {
-    setPreviewAsset({ id: assetId, originalFileName: "" });
+  const openAssetPreview = useCallback(
+    (assetId: string, faceId: string) => {
+    setPreviewAsset({
+      id: assetId,
+      originalFileName: "",
+      highlightFaceId: faceId,
+    });
     setPreviewOpen(true);
     fetch(`/api/immich/assets/${assetId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then(
-        (data: { id?: string; originalFileName?: string } | null) => {
+        (data: {
+          id?: string;
+          originalFileName?: string;
+          type?: string;
+        } | null) => {
           if (!data?.id) return;
           setPreviewAsset({
             id: data.id,
             originalFileName: String(data.originalFileName ?? ""),
+            type: data.type,
+            highlightFaceId: faceId,
           });
         },
       )
       .catch(() => {
         /* keep fallback id-only target */
       });
-  }, []);
+    },
+    [],
+  );
 
   const loadRows = useCallback(() => {
     setLoading(true);
@@ -303,13 +316,30 @@ export function PersonLinkedFacesSection({
         onConfirm={runLink}
       />
       <AssetPreviewModal
-        key={previewAsset?.id ?? "closed"}
+        key={
+          previewAsset
+            ? `${previewAsset.id}-${previewAsset.highlightFaceId ?? ""}`
+            : "closed"
+        }
         open={previewOpen}
         onOpenChange={(open) => {
           setPreviewOpen(open);
           if (!open) setPreviewAsset(null);
         }}
         asset={previewAsset}
+        onAssetReplaced={(_old, next) => {
+          setPreviewAsset((prev) =>
+            prev
+              ? {
+                  id: next.id,
+                  originalFileName: next.originalFileName,
+                  type: next.type,
+                  highlightFaceId: prev.highlightFaceId,
+                }
+              : null,
+          );
+          loadRows();
+        }}
       />
     </div>
   );

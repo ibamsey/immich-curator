@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import { listPersonFacePanelRowsForPerson } from "@/lib/immich/faces";
+import {
+  listLinkedFacePanelRowsForPerson,
+  listPersonFacePanelRowsForPerson,
+} from "@/lib/immich/faces";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 
 export const maxDuration = 120;
 
 type Params = { params: Promise<{ personId: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   try {
     const { personId } = await params;
     const operatorUserId = await resolveOperatorUserId();
-    const rows = await listPersonFacePanelRowsForPerson(
-      personId,
-      operatorUserId,
-    );
+    const mode = new URL(request.url).searchParams.get("mode");
+    const rows =
+      mode === "linked"
+        ? await listLinkedFacePanelRowsForPerson(personId)
+        : await listPersonFacePanelRowsForPerson(personId, operatorUserId);
     return NextResponse.json({ rows });
   } catch (e) {
     const message =

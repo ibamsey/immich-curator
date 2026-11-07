@@ -29,6 +29,8 @@ export function normalizeGridAsset(raw: RawSearchAsset): GridAsset {
   return {
     id: String(raw.id),
     originalFileName: String(raw.originalFileName ?? ""),
+    originalMimeType:
+      (raw.originalMimeType as string | undefined) ?? undefined,
     fileCreatedAt: String(raw.fileCreatedAt ?? ""),
     localDateTime: String(raw.localDateTime ?? ""),
     updatedAt: String(raw.updatedAt ?? ""),

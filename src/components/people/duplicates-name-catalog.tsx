@@ -37,7 +37,9 @@ async function fetchLinkedFacesForPerson(personId: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`/api/immich/people/${personId}/faces`);
+    const res = await fetch(
+      `/api/immich/people/${personId}/faces?mode=linked`,
+    );
     const data = (await res.json()) as {
       rows?: PersonFacePanelRow[];
       message?: string;
@@ -626,23 +628,24 @@ function DuplicateGroupSection({
             <p className="font-medium text-foreground">Merge direction</p>
             <p>
               <span className="text-muted-foreground">Into (survivor): </span>
-              {survivorPreview.name?.trim() || "Unnamed"}{" "}
-              <span className="font-mono text-[10px] text-muted-foreground">
-                ({survivorPreview.id.slice(0, 8)}…)
+              <span className="mr-1 inline-flex min-w-[1.5rem] items-center justify-center rounded bg-primary/15 px-1 font-semibold tabular-nums text-foreground">
+                1
               </span>
+              {survivorPreview.name?.trim() || "Unnamed"}
             </p>
             {sourcePreview.length > 0 ? (
               <div>
                 <p className="text-muted-foreground">Sources (merged away):</p>
-                <ul>
-                  {sourcePreview.map((id) => {
+                <ul className="list-none space-y-1 pl-0">
+                  {sourcePreview.map((id, idx) => {
                     const p = personById.get(id);
+                    const orderNum = idx + 2;
                     return (
-                      <li key={id}>
-                        {p?.name?.trim() || id.slice(0, 8)}
-                        <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                          ({id.slice(0, 8)}…)
+                      <li key={id} className="flex flex-wrap items-baseline gap-x-1">
+                        <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded bg-muted px-1 font-semibold tabular-nums text-foreground">
+                          {orderNum}
                         </span>
+                        <span>{p?.name?.trim() || "Unnamed"}</span>
                       </li>
                     );
                   })}

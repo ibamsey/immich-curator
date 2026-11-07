@@ -79,6 +79,8 @@ export type ImmichAssetFace = {
 export type ImmichAsset = {
   id: string;
   originalFileName: string;
+  /** Present on Immich responses; used for editability hints. */
+  originalMimeType?: string;
   fileCreatedAt: string;
   localDateTime: string;
   updatedAt: string;

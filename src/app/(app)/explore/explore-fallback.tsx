@@ -1,15 +1,11 @@
-import { AppShell } from "@/components/shell/app-shell";
-import type { ShellContext } from "@/lib/server/shell-context";
+import { AppShellRouteFallback } from "@/components/shell/app-shell-route-fallback";
 
-export function ExploreFallback({ shell }: { shell: ShellContext }) {
+/** Sync fallback; full shell loads inside ExploreData (inside Suspense). */
+export function ExploreFallback() {
   return (
-    <AppShell
-      targetEmail={shell.targetEmail}
-      connectionOk={shell.connectionOk}
+    <AppShellRouteFallback
       headerTitle="Explore"
-      headerSubtitle="Loading…"
-    >
-      <div className="p-6 text-sm text-muted-foreground">Loading album…</div>
-    </AppShell>
+      loadingMessage="Loading album…"
+    />
   );
 }

@@ -91,9 +91,25 @@ export function ExploreWorkspace({
     setFullPreviewAsset({
       id: detail.id,
       originalFileName: detail.originalFileName,
+      type: detail.type,
     });
     setFullPreviewOpen(true);
   }, [detail]);
+
+  const onAssetReplaced = useCallback(
+    (oldId: string, next: ImmichAssetWithEnrichment) => {
+      setSelectedId(next.id);
+      setDetail(next);
+      setFullPreviewAsset({
+        id: next.id,
+        originalFileName: next.originalFileName,
+        type: next.type,
+      });
+      gridRef.current?.removeAsset(oldId);
+      gridRef.current?.refetch();
+    },
+    [],
+  );
 
   const panelContent = selectedId ? (
     <AssetCurationPanel
@@ -147,6 +163,7 @@ export function ExploreWorkspace({
           if (!open) setFullPreviewAsset(null);
         }}
         asset={fullPreviewAsset}
+        onAssetReplaced={onAssetReplaced}
       />
     </AppShell>
   );

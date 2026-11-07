@@ -22,7 +22,13 @@ async function immichFetchWithKey(
   const url = `${env.immichServerUrl}${normalized}`;
   const headers = new Headers(init?.headers);
   headers.set("x-api-key", apiKey);
-  if (init?.body && !headers.has("Content-Type")) {
+  const body = init?.body;
+  if (
+    body &&
+    !headers.has("Content-Type") &&
+    !(body instanceof FormData) &&
+    !(body instanceof Blob)
+  ) {
     headers.set("Content-Type", "application/json");
   }
   return fetch(url, { cache: "no-store", ...init, headers });

@@ -1,17 +1,14 @@
-import { AppShell } from "@/components/shell/app-shell";
-import type { ShellContext } from "@/lib/server/shell-context";
+import { AppShellRouteFallback } from "@/components/shell/app-shell-route-fallback";
 
-export function PeopleFallback({ shell }: { shell: ShellContext }) {
+/**
+ * Sync shell for Suspense fallback only. When the page has `searchParams` + `instant`,
+ * `loadShellContext()` runs inside `people-data.tsx` (inside Suspense).
+ */
+export function PeopleFallback() {
   return (
-    <AppShell
-      targetEmail={shell.targetEmail}
-      connectionOk={shell.connectionOk}
+    <AppShellRouteFallback
       headerTitle="People"
-      headerSubtitle="Loading…"
-    >
-      <div className="p-6 text-sm text-muted-foreground">
-        Loading people catalogue…
-      </div>
-    </AppShell>
+      loadingMessage="Loading people catalogue…"
+    />
   );
 }

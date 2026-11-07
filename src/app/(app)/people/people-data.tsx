@@ -3,18 +3,18 @@ import { getPeopleInSharedScope } from "@/lib/immich/people";
 import { resolveOperatorUserIdCached } from "@/lib/immich/users";
 import { PeopleWorkspace } from "@/components/people/people-workspace";
 import { peopleTabForSelection } from "@/lib/people/bucket-people";
-import type { ShellContext } from "@/lib/server/shell-context";
+import { loadShellContext } from "@/lib/server/shell-context";
 
 type PeopleDataProps = {
-  shell: ShellContext;
   searchParams: Promise<{
     personId?: string;
     tab?: "faces" | "duplicates" | string;
   }>;
 };
 
-export async function PeopleData({ shell, searchParams }: PeopleDataProps) {
+export async function PeopleData({ searchParams }: PeopleDataProps) {
   await connection();
+  const shell = await loadShellContext();
   const params = await searchParams;
   const initialPersonId = params.personId?.trim() || null;
   const requestedTab = params.tab;

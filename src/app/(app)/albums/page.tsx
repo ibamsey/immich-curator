@@ -1,56 +1,16 @@
-import { connection } from "next/server";
-import { getAllAlbums } from "@/lib/immich/albums";
-import { getCuratorEnv, hasOperatorApiKey } from "@/lib/config/env";
-import { resolveOperatorUserIdCached } from "@/lib/immich/users";
+import { Suspense } from "react";
 import { loadShellContext } from "@/lib/server/shell-context";
-import { AlbumsWorkspace } from "@/components/albums/albums-workspace";
-import { ConfigError } from "@/components/config-error";
-import type { CuratorShareConfig } from "@/components/albums/album-detail-panel";
-import type { ImmichAlbum } from "@/lib/immich/types";
+import { AlbumsData } from "./albums-data";
+import { AlbumsFallback } from "./albums-fallback";
 
-type AlbumsData =
-  | { ok: true; albums: ImmichAlbum[]; shareConfig: CuratorShareConfig }
-  | { ok: false; message: string };
-
-async function loadAlbumsData(): Promise<AlbumsData> {
-  try {
-    const env = getCuratorEnv();
-    const albums = await getAllAlbums();
-    const operatorUserId = await resolveOperatorUserIdCached();
-    return {
-      ok: true,
-      albums,
-      shareConfig: {
-        operatorEmail: env.operatorEmail ?? null,
-        operatorUserId,
-        defaultShareRole: env.defaultShareRole,
-      },
-    };
-  } catch (e) {
-    const message =
-      e instanceof Error ? e.message : "Unexpected error loading albums.";
-    return { ok: false, message };
-  }
-}
+export const instant = true;
 
 export default async function AlbumsPage() {
-  await connection();
   const shell = await loadShellContext();
-  const data = await loadAlbumsData();
-
-  if (!data.ok) {
-    return <ConfigError shell={shell} message={data.message} />;
-  }
 
   return (
-    <AlbumsWorkspace
-      shell={shell}
-      initialAlbums={data.albums}
-      shareConfig={data.shareConfig}
-      curationConfig={{
-        operatorUserId: data.shareConfig.operatorUserId,
-        operatorCommentsEnabled: hasOperatorApiKey(),
-      }}
-    />
+    <Suspense fallback={<AlbumsFallback shell={shell} />}>
+      <AlbumsData shell={shell} />
+    </Suspense>
   );
 }

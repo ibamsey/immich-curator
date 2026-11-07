@@ -8,6 +8,7 @@ import type { ImmichAsset, ImmichAssetFace } from "@/lib/immich/types";
 import {
   loadAssetFaces,
   patchCachedFacePerson,
+  patchCachedFaceUnlinked,
   subscribePersonRenames,
   withPersonName,
 } from "@/lib/people/load-asset-faces";
@@ -17,7 +18,7 @@ import {
   type FaceBoxPercent,
 } from "@/lib/people/face-box-layout";
 
-type PreviewAssetPick = Pick<ImmichAsset, "id" | "originalFileName">;
+type PreviewAssetPick = Pick<ImmichAsset, "id" | "originalFileName" | "type">;
 
 type AssetGridProps = {
   assets: ImmichAsset[];
@@ -89,8 +90,13 @@ function GridFaceBoxes({ assetId }: { assetId: string }) {
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
   const [editingFaceId, setEditingFaceId] = useState<string | null>(null);
   const [frame, setFrame] = useState<Frame | null>(null);
-  facesRef.current = faces;
-  frameRef.current = frame;
+
+  useEffect(() => {
+    facesRef.current = faces;
+  }, [faces]);
+  useEffect(() => {
+    frameRef.current = frame;
+  }, [frame]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -187,6 +193,7 @@ function GridFaceBoxes({ assetId }: { assetId: string }) {
     <div ref={hostRef} className="pointer-events-none absolute inset-0">
       {active ? (
         <FaceNameBox
+          key={`${active.id}-${active.personId ?? "unlinked"}`}
           faceId={active.id}
           personId={active.personId}
           name={active.name}
@@ -215,6 +222,16 @@ function GridFaceBoxes({ assetId }: { assetId: string }) {
                 : prev,
             );
             patchCachedFacePerson(assetId, faceId, person);
+          }}
+          onUnlinked={(faceId) => {
+            setFaces((prev) =>
+              prev
+                ? prev.map((face) =>
+                    face.id === faceId ? { ...face, person: null } : face,
+                  )
+                : prev,
+            );
+            patchCachedFaceUnlinked(assetId, faceId);
           }}
         />
       ) : null}

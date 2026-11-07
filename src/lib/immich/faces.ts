@@ -245,6 +245,51 @@ function toUnassignedShape(
   };
 }
 
+function sortPersonFaceRowsByAssetThenFaceId(
+  a: PersonFacePanelRow,
+  b: PersonFacePanelRow,
+) {
+  const c = a.face.assetId.localeCompare(b.face.assetId);
+  if (c !== 0) return c;
+  return a.face.id.localeCompare(b.face.id);
+}
+
+/**
+ * **Linked faces only** for this person — walks assets from metadata search
+ * (`personIds: [personId]`) and loads faces per asset. Use for lightweight UIs
+ * (e.g. People → Duplicates) that only need thumbnails for assigned faces, without
+ * scanning the library for similar unassigned candidates.
+ */
+export async function listLinkedFacePanelRowsForPerson(
+  personId: string,
+): Promise<PersonFacePanelRow[]> {
+  const assetIds = await getPersonAssetIdsInLibrary(personId);
+  if (assetIds.length === 0) return [];
+
+  const facesByAsset = await getFacesForAssets(
+    assetIds,
+    FACE_BATCH_CONCURRENCY,
+  );
+  const linked: PersonFacePanelRow[] = [];
+
+  for (const assetId of assetIds) {
+    for (const face of facesByAsset[assetId] ?? []) {
+      if (face.person?.id !== personId) continue;
+      const shape = toUnassignedShape(face, assetId);
+      linked.push({
+        kind: "linked",
+        face: shape,
+        similarityRank: null,
+        otherPersonId: null,
+        otherPersonName: null,
+      });
+    }
+  }
+
+  linked.sort(sortPersonFaceRowsByAssetThenFaceId);
+  return linked;
+}
+
 /**
  * (a) All faces linked to this person (library-wide).
  * (b) Unassigned faces on scanned assets where Immich’s `GET /api/people?closestAssetId=<faceId>`
@@ -285,12 +330,7 @@ export async function listPersonFacePanelRowsForPerson(
     }
   }
 
-  function sortByAssetThenFaceId(a: PersonFacePanelRow, b: PersonFacePanelRow) {
-    const c = a.face.assetId.localeCompare(b.face.assetId);
-    if (c !== 0) return c;
-    return a.face.id.localeCompare(b.face.id);
-  }
-  linked.sort(sortByAssetThenFaceId);
+  linked.sort(sortPersonFaceRowsByAssetThenFaceId);
 
   const candidates = new Map<string, UnassignedFace>();
   for (const assetId of scanAssetIds) {
@@ -343,7 +383,7 @@ export async function listPersonFacePanelRowsForPerson(
     const ra = a.similarityRank ?? 999999;
     const rb = b.similarityRank ?? 999999;
     if (ra !== rb) return ra - rb;
-    return sortByAssetThenFaceId(a, b);
+    return sortPersonFaceRowsByAssetThenFaceId(a, b);
   });
   return [...linked, ...similar];
 }

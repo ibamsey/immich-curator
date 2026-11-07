@@ -63,9 +63,12 @@ export function PersonIdentityEditor({
   const personRef = useRef(person);
   const nameRef = useRef(state.name);
   const dobDisplayRef = useRef(state.birthDateDisplay);
-  personRef.current = person;
-  nameRef.current = state.name;
-  dobDisplayRef.current = state.birthDateDisplay;
+
+  useEffect(() => {
+    personRef.current = person;
+    nameRef.current = state.name;
+    dobDisplayRef.current = state.birthDateDisplay;
+  }, [person, state.name, state.birthDateDisplay]);
 
   useEffect(() => {
     setState((s) => ({
@@ -77,6 +80,8 @@ export function PersonIdentityEditor({
     }));
     setMergePrompt(null);
     setNameCommitting(false);
+    // Intentionally only when navigating to a different person; name/DOB sync is below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- person.id only
   }, [person.id]);
 
   useEffect(() => {

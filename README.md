@@ -2,7 +2,7 @@
 
 A LAN-oriented **curation sidecar** for [Immich](https://immich.app): a dedicated web app where a **curator** (operator) helps another person **catalogue, sort, and annotate** a photo library on that person’s behalf. A typical scenario is helping someone digitise and organise an archive of old prints or scans—grouping images into albums (topics, events, families), **naming people**, writing **descriptions**, fixing dates and locations, and trimming obvious duplicate files. The curator is built for situations where the library owner has limited time or confidence with photo-management software: the expert does the heavy lifting in a focused UI while Immich remains the system of record.
 
-On dartmoor the concrete setup is Ian curating **Geoff’s** Poundsgate corpus, but the app is modeled as **operator** (who uses the UI, may comment on shared albums) and **target** (whose API key performs owner edits—metadata, people, deletes). See [docs/adr/0002-curator-operator-and-target.md](./docs/adr/0002-curator-operator-and-target.md).
+A concrete example might be Ian curating **Geoff’s** old photo collection. The app models an **operator** (who uses the UI, comments on shared albums, and adds descriptions and people) and a **target** (the library owner whose API key performs those edits in Immich). See [docs/adr/0002-curator-operator-and-target.md](./docs/adr/0002-curator-operator-and-target.md).
 
 ## What you can do today
 
@@ -74,7 +74,7 @@ npm run build && systemctl --user restart immich-curator
 systemctl --user status immich-curator
 ```
 
-Listens on **`0.0.0.0:3000`** on the LAN. Restrict with firewall; never expose API keys to the browser bundle.
+Listens on `0.0.0.0:3000` on the LAN. Restrict with firewall; never expose API keys to the browser bundle.
 
 ## Related ops
 

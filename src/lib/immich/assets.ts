@@ -1,3 +1,7 @@
+import {
+  captureDatetimeLocalMatches,
+  immichLocalDateTimeToDatetimeLocal,
+} from "@/lib/immich/captured-datetime";
 import { ImmichApiError, immichFetchTarget, immichJsonTarget } from "@/lib/immich/client";
 import type {
   AssetUpdatePayload,
@@ -5,6 +9,25 @@ import type {
   ImmichAssetWithEnrichment,
   ImmichUser,
 } from "@/lib/immich/types";
+
+const CAPTURE_DATE_SYNC_TIMEOUT_MS = 15_000;
+const CAPTURE_DATE_SYNC_INTERVAL_MS = 400;
+
+async function waitForLocalDateTimeSync(
+  assetId: string,
+  datetimeLocal: string,
+): Promise<ImmichAsset> {
+  const deadline = Date.now() + CAPTURE_DATE_SYNC_TIMEOUT_MS;
+  let last: ImmichAsset | null = null;
+  while (Date.now() < deadline) {
+    last = await getAsset(assetId);
+    if (captureDatetimeLocalMatches(last.localDateTime, datetimeLocal)) {
+      return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, CAPTURE_DATE_SYNC_INTERVAL_MS));
+  }
+  return last ?? getAsset(assetId);
+}
 
 export async function getAsset(
   assetId: string,
@@ -16,9 +39,21 @@ export async function updateAsset(
   assetId: string,
   payload: AssetUpdatePayload,
 ): Promise<ImmichAsset> {
+  const body: { description?: string; dateTimeOriginal?: string } = {};
+  if (payload.description !== undefined) {
+    body.description = payload.description;
+  }
+  const captureDatetimeLocal =
+    payload.localDateTime !== undefined
+      ? immichLocalDateTimeToDatetimeLocal(payload.localDateTime)
+      : "";
+  if (payload.localDateTime !== undefined) {
+    /** Immich `UpdateAssetDto`; EXIF updates immediately, `asset.localDateTime` lags until a job runs. */
+    body.dateTimeOriginal = payload.localDateTime;
+  }
   const res = await immichFetchTarget(`/api/assets/${assetId}`, {
     method: "PUT",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -26,6 +61,9 @@ export async function updateAsset(
       text || `Immich request failed: ${res.status}`,
       res.status,
     );
+  }
+  if (captureDatetimeLocal) {
+    return waitForLocalDateTimeSync(assetId, captureDatetimeLocal);
   }
   return res.json() as Promise<ImmichAsset>;
 }

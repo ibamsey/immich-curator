@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AssetActivityComments } from "@/components/explore/asset-activity-comments";
@@ -8,6 +8,11 @@ import { AssetPreviewWithFaces } from "@/components/explore/asset-preview-with-f
 import { AssetMetadataFields } from "@/components/assets/asset-metadata-fields";
 import { AssetTagEditor } from "@/components/explore/asset-tag-editor";
 import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import {
+  datetimeLocalToImmichDateTimeOriginal,
+  immichLocalDateTimeToDatetimeLocal,
+  sameImmichCaptureWallClock,
+} from "@/lib/immich/captured-datetime";
 import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 
 export type CurationPanelConfig = {
@@ -28,20 +33,6 @@ export type AssetCurationPanelProps = {
   /** Open zoom/pan full-image modal (e.g. from RHS preview). Grid selects only. */
   onOpenFullPreview?: () => void;
 };
-
-function toDatetimeLocalValue(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch {
-    return "";
-  }
-}
-
-function fromDatetimeLocalValue(value: string): string {
-  return new Date(value).toISOString();
-}
 
 export function AssetCurationPanel({
   assetId,
@@ -127,10 +118,17 @@ function AssetMetadataEditor({
 }) {
   const [description, setDescription] = useState(asset.description ?? "");
   const [capturedLocal, setCapturedLocal] = useState(
-    toDatetimeLocalValue(asset.localDateTime),
+    immichLocalDateTimeToDatetimeLocal(asset.localDateTime),
   );
   const [savingMeta, setSavingMeta] = useState(false);
   const [metaMessage, setMetaMessage] = useState<string | null>(null);
+  const descriptionFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (descriptionFocusedRef.current) return;
+    setDescription(asset.description ?? "");
+    setCapturedLocal(immichLocalDateTimeToDatetimeLocal(asset.localDateTime));
+  }, [asset.id, asset.description, asset.localDateTime]);
 
   async function saveMetadata() {
     setSavingMeta(true);
@@ -140,11 +138,14 @@ function AssetMetadataEditor({
       if (description !== (asset.description ?? "")) {
         body.description = description;
       }
-      const isoCaptured = capturedLocal
-        ? fromDatetimeLocalValue(capturedLocal)
+      const wallClockIso = capturedLocal
+        ? datetimeLocalToImmichDateTimeOriginal(capturedLocal)
         : null;
-      if (isoCaptured && isoCaptured !== asset.localDateTime) {
-        body.localDateTime = isoCaptured;
+      if (
+        wallClockIso &&
+        !sameImmichCaptureWallClock(wallClockIso, asset.localDateTime)
+      ) {
+        body.localDateTime = wallClockIso;
       }
       if (Object.keys(body).length === 0) {
         setMetaMessage("No changes to save.");
@@ -160,13 +161,12 @@ function AssetMetadataEditor({
         setMetaMessage(data.error ?? "Save failed");
         return;
       }
-      const refetch = await fetch(`/api/immich/assets/${assetId}`);
-      const enriched = refetch.ok
-        ? normalizeAssetDetail(
-            (await refetch.json()) as Record<string, unknown>,
-          )
-        : normalizeAssetDetail(data as Record<string, unknown>);
+      const enriched = normalizeAssetDetail(data as Record<string, unknown>);
       onAssetUpdated(enriched);
+      setDescription(enriched.description ?? "");
+      setCapturedLocal(
+        immichLocalDateTimeToDatetimeLocal(enriched.localDateTime),
+      );
       setMetaMessage("Saved.");
     } catch {
       setMetaMessage("Save failed");
@@ -184,6 +184,12 @@ function AssetMetadataEditor({
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onFocus={() => {
+            descriptionFocusedRef.current = true;
+          }}
+          onBlur={() => {
+            descriptionFocusedRef.current = false;
+          }}
           rows={4}
           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
         />

@@ -54,6 +54,7 @@ export function buildMetadataSearchBody(
     body.albumIds = [scope.albumId];
   } else if (scope.mode === "personShared") {
     body.personIds = [scope.personId];
+    body.withPeople = true;
     if (sharedAlbumIds.length > 0) {
       body.albumIds = sharedAlbumIds;
     }

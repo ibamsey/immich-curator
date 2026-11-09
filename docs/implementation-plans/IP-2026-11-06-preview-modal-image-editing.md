@@ -18,7 +18,7 @@ Add crop, quarter-turn rotate, brightness, and contrast in [`src/components/grid
 ## Tasks
 
 1. `HEAD` on [`/api/immich/assets/[id]/original`](../../src/app/api/immich/assets/[assetId]/original/route.ts) for `Content-Type` gating; pure helper + Vitest for editable MIME + filename + `type === IMAGE`.
-2. Client: `react-easy-crop` + **Canvas 2D** export (rotate → crop area → `filter` brightness/contrast); disable zoom/pan while editing.
+2. Client: rectangle crop overlay (`EditImageCrop`) + **Canvas 2D** export (rotate → crop area → `filter` brightness/contrast); disable zoom/pan while editing.
 3. Server route: e.g. `POST .../replace-with-upload` orchestrating upload → copy → delete; forward errors.
 4. Wire `onAssetReplaced` from modal into Explore and People preview parents; refetch grid/detail.
 

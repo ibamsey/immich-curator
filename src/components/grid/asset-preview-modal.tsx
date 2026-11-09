@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Cropper from "react-easy-crop";
-import "react-easy-crop/react-easy-crop.css";
 import {
   Dialog,
   DialogContent,
@@ -15,8 +13,15 @@ import { cn } from "@/lib/utils";
 import { assetOriginalPath } from "@/lib/immich/asset-original-path";
 import {
   containedImageRect,
-  faceBoxPercent,
+  displayRectNearlyEqual,
+  displayRectToFacePixels,
+  faceBoxDisplayRect,
+  faceBoxOnImage,
+  faceBoxPercentStyle,
+  imageOverlayLayout,
+  manualFacePayload,
   type ContainedImageRect,
+  type DisplayRect,
 } from "@/lib/people/face-box-layout";
 import {
   patchCachedFacePerson,
@@ -24,8 +29,22 @@ import {
   subscribePersonRenames,
   withPersonName,
 } from "@/lib/people/load-asset-faces";
-import type { ImmichAssetFace, ImmichAssetWithEnrichment } from "@/lib/immich/types";
+import type {
+  ImmichAssetFace,
+  ImmichAssetWithEnrichment,
+  ImmichPerson,
+} from "@/lib/immich/types";
 import { isEditableRasterImage } from "@/lib/images/editable-asset-format";
+import {
+  fullFramePixelRect,
+  isFullFramePixels,
+  rotatedBoundingBoxSize,
+} from "@/lib/images/rotated-bounds";
+import { AddFaceTagPanel } from "@/components/grid/add-face-tag-panel";
+import { EditImageCrop } from "@/components/grid/edit-image-crop";
+import { EditImageFacesOverlay } from "@/components/grid/edit-image-faces-overlay";
+import { displayRectIsUsable } from "@/components/people/display-rect-editor";
+import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
 
 /** Minimal fields for loading original + labeling; matches `GridAsset` subset. */
 export type AssetPreviewTarget = {
@@ -50,15 +69,15 @@ type ImageLayout = {
 
 type Area = { x: number; y: number; width: number; height: number };
 
-type Point = { x: number; y: number };
-
 function pickFaceAtPercent(
   faces: ImmichAssetFace[],
   pxPct: number,
   pyPct: number,
+  imageNaturalWidth: number,
+  imageNaturalHeight: number,
 ): ImmichAssetFace | null {
   const hits = faces.flatMap((face) => {
-    const box = faceBoxPercent(face);
+    const box = faceBoxOnImage(face, imageNaturalWidth, imageNaturalHeight);
     if (!box) return [];
     const pad = 0.2;
     const inside =
@@ -71,33 +90,6 @@ function pickFaceAtPercent(
   if (hits.length === 0) return null;
   hits.sort((a, b) => a.area - b.area);
   return hits[0]!.face;
-}
-
-/** Width/height of the axis-aligned bounding box after rotating a `w × h` rectangle by `deg`. */
-function rotatedBoundingBoxSize(w: number, h: number, deg: number) {
-  const rad = (deg * Math.PI) / 180;
-  const c = Math.abs(Math.cos(rad));
-  const s = Math.abs(Math.sin(rad));
-  return {
-    width: Math.ceil(w * c + h * s) || 1,
-    height: Math.ceil(w * s + h * c) || 1,
-  };
-}
-
-/** True when cropped area is essentially the full image (percent space). */
-function isFullFramePercent(area: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}): boolean {
-  const eps = 0.35;
-  return (
-    area.x <= eps &&
-    area.y <= eps &&
-    area.width >= 100 - eps * 2 &&
-    area.height >= 100 - eps * 2
-  );
 }
 
 async function canvasToBlob(
@@ -194,6 +186,8 @@ type AssetPreviewModalProps = {
     oldId: string,
     next: ImmichAssetWithEnrichment,
   ) => void;
+  /** After description or other metadata saved from the modal footer. */
+  onAssetUpdated?: (asset: ImmichAssetWithEnrichment) => void;
 };
 
 export function AssetPreviewModal({
@@ -201,18 +195,17 @@ export function AssetPreviewModal({
   onOpenChange,
   asset,
   onAssetReplaced,
+  onAssetUpdated,
 }: AssetPreviewModalProps) {
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
   const [faces, setFaces] = useState<ImmichAssetFace[]>([]);
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
+  const [selectedFaceId, setSelectedFaceId] = useState<string | null>(null);
   const [editingFaceId, setEditingFaceId] = useState<string | null>(null);
   const editingFaceIdRef = useRef<string | null>(null);
   const highlightFaceId = asset?.highlightFaceId ?? null;
-  /** While editing a name we keep that face emphasized. */
-  const emphasizedFaceId =
-    editingFaceId ?? hoveredFaceId ?? highlightFaceId;
   const [layout, setLayout] = useState<ImageLayout | null>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
@@ -226,28 +219,67 @@ export function AssetPreviewModal({
     fileCreatedAt: string;
     fileModifiedAt: string;
   } | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const descriptionSavedRef = useRef("");
+  const descriptionFocusedRef = useRef(false);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [descriptionSaving, setDescriptionSaving] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
 
   const [editMode, setEditMode] = useState(false);
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(
     null,
   );
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
-  const [cropZoom, setCropZoom] = useState(1);
+  const [cropToolActive, setCropToolActive] = useState(false);
   const [rotationQuarters, setRotationQuarters] = useState(0);
   /** Continuous rotation in addition to quarter turns (degrees). */
   const [freeRotationDeg, setFreeRotationDeg] = useState(0);
   const cropRotationDeg = rotationQuarters * 90 + freeRotationDeg;
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [croppedAreaPercent, setCroppedAreaPercent] = useState<Area | null>(
-    null,
-  );
+  const prevCropRotationRef = useRef(0);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+
+  const [geometryEditingFaceId, setGeometryEditingFaceId] = useState<
+    string | null
+  >(null);
+  const [draftDisplayRect, setDraftDisplayRect] = useState<DisplayRect | null>(
+    null,
+  );
+  const [geometrySaving, setGeometrySaving] = useState(false);
+  const [addFaceMode, setAddFaceMode] = useState(false);
+  /** Step 2 done: show link-to-person UI (step 3). */
+  const [addFaceRectConfirmed, setAddFaceRectConfirmed] = useState(false);
+  const [addFaceSaving, setAddFaceSaving] = useState(false);
+  const [faceToolError, setFaceToolError] = useState<string | null>(null);
+  const [unlinkFaceId, setUnlinkFaceId] = useState<string | null>(null);
+  const [unlinkLoading, setUnlinkLoading] = useState(false);
+  const editImageLayoutRef = useRef({ w: 0, h: 0 });
+
+  /** While editing a name or face box we keep that face emphasized. */
+  const emphasizedFaceId =
+    editingFaceId ??
+    geometryEditingFaceId ??
+    hoveredFaceId ??
+    selectedFaceId ??
+    highlightFaceId;
+
+  const stackFrontFaceId = emphasizedFaceId;
+
+  const facesPaintOrder = useMemo(() => {
+    if (!stackFrontFaceId) return faces;
+    const front = stackFrontFaceId;
+    return [...faces].sort((a, b) => {
+      if (a.id === front) return 1;
+      if (b.id === front) return -1;
+      return 0;
+    });
+  }, [faces, stackFrontFaceId]);
 
   const cropUrlRef = useRef<string | null>(null);
 
@@ -262,37 +294,166 @@ export function AssetPreviewModal({
     }
     setCropImageUrl(null);
     setNaturalSize(null);
-    setCrop({ x: 0, y: 0 });
-    setCropZoom(1);
+    setCropToolActive(false);
     setRotationQuarters(0);
     setFreeRotationDeg(0);
     setCroppedAreaPixels(null);
-    setCroppedAreaPercent(null);
+    prevCropRotationRef.current = 0;
     setBrightness(100);
     setContrast(100);
     setSaveError(null);
+    setGeometryEditingFaceId(null);
+    setDraftDisplayRect(null);
+    setGeometrySaving(false);
+    setAddFaceMode(false);
+    setAddFaceRectConfirmed(false);
+    setAddFaceSaving(false);
+    setFaceToolError(null);
   }, []);
+
+  const reloadAssetFaces = useCallback(async () => {
+    if (!asset) return;
+    const res = await fetch(`/api/immich/assets/${asset.id}/faces`);
+    const data = (await res.json()) as { faces?: ImmichAssetFace[] };
+    if (res.ok) setFaces(data.faces ?? []);
+  }, [asset]);
+
+  const confirmUnlinkFace = useCallback(async () => {
+    if (!unlinkFaceId || !asset) return;
+    setUnlinkLoading(true);
+    setFaceToolError(null);
+    try {
+      const res = await fetch(`/api/immich/faces/${unlinkFaceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        throw new Error(data.message ?? "Unlink failed");
+      }
+      setFaces((prev) =>
+        prev.map((item) =>
+          item.id === unlinkFaceId ? { ...item, person: null } : item,
+        ),
+      );
+      patchCachedFaceUnlinked(asset.id, unlinkFaceId);
+      if (geometryEditingFaceId === unlinkFaceId) {
+        setGeometryEditingFaceId(null);
+        setDraftDisplayRect(null);
+      }
+      setEditingFaceId((current) =>
+        current === unlinkFaceId ? null : current,
+      );
+      setUnlinkFaceId(null);
+    } catch (e) {
+      setFaceToolError(e instanceof Error ? e.message : "Unlink failed");
+      setUnlinkFaceId(null);
+    } finally {
+      setUnlinkLoading(false);
+    }
+  }, [asset, geometryEditingFaceId, unlinkFaceId]);
+
+  const handleGeometryCommitted = useCallback(
+    async (
+      faceId: string,
+      pixels: ReturnType<typeof displayRectToFacePixels>,
+    ) => {
+      if (!asset) return;
+      const face = faces.find((f) => f.id === faceId);
+      const personId = face?.person?.id;
+      if (!personId) return;
+      setGeometrySaving(true);
+      setFaceToolError(null);
+      try {
+        const payload = manualFacePayload(pixels, asset.id, personId);
+        const res = await fetch(`/api/immich/faces/${faceId}/geometry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw new Error(data.message ?? "Could not save face rectangle");
+        }
+        setGeometryEditingFaceId(null);
+        setDraftDisplayRect(null);
+        await reloadAssetFaces();
+      } catch (e) {
+        setFaceToolError(
+          e instanceof Error ? e.message : "Could not save face rectangle",
+        );
+      } finally {
+        setGeometrySaving(false);
+      }
+    },
+    [asset, faces, reloadAssetFaces],
+  );
+
+  const saveDescriptionIfChanged = useCallback(async () => {
+    if (!asset || descriptionSaving) return;
+    if (descriptionDraft === descriptionSavedRef.current) return;
+    setDescriptionSaving(true);
+    setDescriptionError(null);
+    try {
+      const res = await fetch(`/api/immich/assets/${asset.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: descriptionDraft }),
+      });
+      const data = (await res.json()) as ImmichAssetWithEnrichment & {
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Save failed");
+      }
+      const enriched = normalizeAssetDetail(
+        data as unknown as Record<string, unknown>,
+      );
+      const saved = enriched.description ?? "";
+      descriptionSavedRef.current = saved;
+      setDescriptionDraft(saved);
+      onAssetUpdated?.(enriched);
+    } catch (e) {
+      setDescriptionError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setDescriptionSaving(false);
+    }
+  }, [asset, descriptionDraft, descriptionSaving, onAssetUpdated]);
 
   const handleDialogOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
+        if (descriptionDraft !== descriptionSavedRef.current) {
+          void saveDescriptionIfChanged();
+        }
         setScale(1);
         setTx(0);
         setTy(0);
         setLayout(null);
         setHoveredFaceId(null);
+        setSelectedFaceId(null);
         setEditingFaceId(null);
         setEditMode(false);
         resetEditState();
         setContentType(null);
         setMimeHint(null);
         setMetaTimes(null);
+        setDescriptionDraft("");
+        descriptionSavedRef.current = "";
+        descriptionFocusedRef.current = false;
+        setDescriptionSaving(false);
+        setDescriptionError(null);
+        setUnlinkFaceId(null);
+        setUnlinkLoading(false);
         setSaveError(null);
         setSaveOpen(false);
       }
       onOpenChange(next);
     },
-    [onOpenChange, resetEditState],
+    [onOpenChange, resetEditState, descriptionDraft, saveDescriptionIfChanged],
   );
 
   const close = useCallback(
@@ -309,12 +470,57 @@ export function AssetPreviewModal({
     );
 
   const dirty = useMemo(() => {
-    if (!croppedAreaPercent) return false;
+    if (!naturalSize || !croppedAreaPixels) return false;
+    const { width: rw, height: rh } = rotatedBoundingBoxSize(
+      naturalSize.w,
+      naturalSize.h,
+      cropRotationDeg,
+    );
     if (rotationQuarters % 4 !== 0) return true;
     if (Math.abs(freeRotationDeg) > 0.05) return true;
     if (brightness !== 100 || contrast !== 100) return true;
-    return !isFullFramePercent(croppedAreaPercent);
-  }, [croppedAreaPercent, rotationQuarters, freeRotationDeg, brightness, contrast]);
+    return !isFullFramePixels(croppedAreaPixels, rw, rh);
+  }, [
+    croppedAreaPixels,
+    cropRotationDeg,
+    naturalSize,
+    rotationQuarters,
+    freeRotationDeg,
+    brightness,
+    contrast,
+  ]);
+
+  const faceChromeVisible = !editMode && Boolean(layout);
+  const faceToolsInteractive =
+    faceChromeVisible && !geometrySaving && !addFaceSaving;
+  const faceToolCaptureActive = Boolean(
+    geometryEditingFaceId || (addFaceMode && !addFaceRectConfirmed),
+  );
+
+  useEffect(() => {
+    if (!dirty) return;
+    setAddFaceMode(false);
+    setGeometryEditingFaceId(null);
+    setDraftDisplayRect(null);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!editMode || !naturalSize) return;
+    const { width: rw, height: rh } = rotatedBoundingBoxSize(
+      naturalSize.w,
+      naturalSize.h,
+      cropRotationDeg,
+    );
+    if (prevCropRotationRef.current !== cropRotationDeg) {
+      prevCropRotationRef.current = cropRotationDeg;
+      setCroppedAreaPixels(fullFramePixelRect(rw, rh));
+      return;
+    }
+    setCroppedAreaPixels((prev) => {
+      if (!prev) return fullFramePixelRect(rw, rh);
+      return prev;
+    });
+  }, [editMode, naturalSize, cropRotationDeg]);
 
   const outputMime = useMemo(() => {
     const mime = (mimeHint ?? contentType ?? "").split(";")[0]?.trim().toLowerCase();
@@ -325,11 +531,15 @@ export function AssetPreviewModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (descriptionFocusedRef.current) {
+        e.preventDefault();
+        descriptionTextareaRef.current?.blur();
+        return;
+      }
       if (editMode) {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          close();
-        }
+        e.preventDefault();
+        close();
         return;
       }
       close();
@@ -378,10 +588,21 @@ export function AssetPreviewModal({
           fileCreatedAt?: string;
           fileModifiedAt?: string;
           originalMimeType?: string;
+          description?: string | null;
+          exifInfo?: { description?: string | null };
         } | null) => {
           if (cancelled || !data) return;
           if (data.originalMimeType) {
             setMimeHint(data.originalMimeType);
+          }
+          const desc = (
+            data.description ??
+            data.exifInfo?.description ??
+            ""
+          ).trim();
+          if (!descriptionFocusedRef.current) {
+            setDescriptionDraft(desc);
+            descriptionSavedRef.current = desc;
           }
           const fc = data.fileCreatedAt;
           const fm = data.fileModifiedAt ?? fc;
@@ -417,15 +638,202 @@ export function AssetPreviewModal({
     return () => ro.disconnect();
   }, [open, asset?.id, measureImageLayout, editMode]);
 
-  const imageRect: ContainedImageRect | null =
-    !editMode && layout
-      ? containedImageRect(
-          layout.containerW,
-          layout.containerH,
-          layout.naturalW,
-          layout.naturalH,
-        )
-      : null;
+  const imageRect = useMemo((): ContainedImageRect | null => {
+    if (editMode || !layout) return null;
+    return containedImageRect(
+      layout.containerW,
+      layout.containerH,
+      layout.naturalW,
+      layout.naturalH,
+    );
+  }, [
+    editMode,
+    layout?.containerW,
+    layout?.containerH,
+    layout?.naturalW,
+    layout?.naturalH,
+  ]);
+
+  useEffect(() => {
+    if (editMode || !imageRect) return;
+    editImageLayoutRef.current = {
+      w: imageRect.width,
+      h: imageRect.height,
+    };
+  }, [editMode, imageRect]);
+
+  const previewImageLayout = useMemo((): ContainedImageRect | null => {
+    if (!imageRect) return null;
+    return imageOverlayLayout(imageRect.width, imageRect.height);
+  }, [imageRect]);
+
+  const handleAddFaceTagged = useCallback(
+    async (person: ImmichPerson) => {
+      if (!asset || !draftDisplayRect) return;
+      const imageW = editMode ? naturalSize?.w : layout?.naturalW;
+      const imageH = editMode ? naturalSize?.h : layout?.naturalH;
+      if (!imageW || !imageH) return;
+      const layoutRect = editMode
+        ? {
+            x: 0,
+            y: 0,
+            width: editImageLayoutRef.current.w,
+            height: editImageLayoutRef.current.h,
+          }
+        : previewImageLayout;
+      if (!layoutRect?.width || !layoutRect.height) return;
+      setAddFaceSaving(true);
+      setFaceToolError(null);
+      try {
+        const pixels = displayRectToFacePixels(
+          draftDisplayRect,
+          layoutRect,
+          imageW,
+          imageH,
+        );
+        const payload = manualFacePayload(pixels, asset.id, person.id);
+        const res = await fetch("/api/immich/faces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw new Error(data.message ?? "Could not add face");
+        }
+        setAddFaceMode(false);
+        setAddFaceRectConfirmed(false);
+        setDraftDisplayRect(null);
+        await reloadAssetFaces();
+      } catch (e) {
+        setFaceToolError(
+          e instanceof Error ? e.message : "Could not add face",
+        );
+      } finally {
+        setAddFaceSaving(false);
+      }
+    },
+    [
+      asset,
+      draftDisplayRect,
+      editMode,
+      layout,
+      naturalSize,
+      previewImageLayout,
+      reloadAssetFaces,
+    ],
+  );
+
+  const facesRef = useRef(faces);
+  facesRef.current = faces;
+
+  /** Re-anchor draft rect when the image layout resizes during geometry edit (not on every render). */
+  useEffect(() => {
+    if (!geometryEditingFaceId || !layout || !previewImageLayout) return;
+    const face = facesRef.current.find((f) => f.id === geometryEditingFaceId);
+    if (!face) return;
+    const disp = faceBoxDisplayRect(
+      face,
+      layout.naturalW,
+      layout.naturalH,
+      previewImageLayout,
+    );
+    if (!disp) return;
+    setDraftDisplayRect((prev) =>
+      prev && displayRectNearlyEqual(prev, disp) ? prev : disp,
+    );
+  }, [
+    geometryEditingFaceId,
+    layout?.containerW,
+    layout?.containerH,
+    layout?.naturalW,
+    layout?.naturalH,
+    previewImageLayout?.width,
+    previewImageLayout?.height,
+  ]);
+
+  const startFaceGeometryEdit = useCallback(
+    (face: ImmichAssetFace) => {
+      if (!layout || !previewImageLayout) return;
+      const disp = faceBoxDisplayRect(
+        face,
+        layout.naturalW,
+        layout.naturalH,
+        previewImageLayout,
+      );
+      if (!disp) return;
+      setDraftDisplayRect(disp);
+      setGeometryEditingFaceId(face.id);
+      setAddFaceMode(false);
+      setFaceToolError(null);
+    },
+    [layout, previewImageLayout],
+  );
+
+  const saveFaceGeometry = useCallback(() => {
+    if (
+      !geometryEditingFaceId ||
+      !draftDisplayRect ||
+      !layout ||
+      !previewImageLayout
+    ) {
+      return;
+    }
+    const pixels = displayRectToFacePixels(
+      draftDisplayRect,
+      previewImageLayout,
+      layout.naturalW,
+      layout.naturalH,
+    );
+    void handleGeometryCommitted(geometryEditingFaceId, pixels);
+  }, [
+    draftDisplayRect,
+    geometryEditingFaceId,
+    handleGeometryCommitted,
+    layout,
+    previewImageLayout,
+  ]);
+
+  const cancelFaceGeometry = useCallback(() => {
+    setGeometryEditingFaceId(null);
+    setDraftDisplayRect(null);
+    setFaceToolError(null);
+  }, []);
+
+  const cancelAddFace = useCallback(() => {
+    setAddFaceMode(false);
+    setAddFaceRectConfirmed(false);
+    setDraftDisplayRect(null);
+    setFaceToolError(null);
+  }, []);
+
+  const confirmAddFaceRect = useCallback(() => {
+    if (!draftDisplayRect || !displayRectIsUsable(draftDisplayRect)) {
+      setFaceToolError("Draw a face box on the image first");
+      return;
+    }
+    setAddFaceRectConfirmed(true);
+    setFaceToolError(null);
+  }, [draftDisplayRect]);
+
+  const toggleAddFaceMode = useCallback(() => {
+    setAddFaceMode((on) => {
+      const next = !on;
+      if (next) {
+        setCropToolActive(false);
+        setGeometryEditingFaceId(null);
+        setAddFaceRectConfirmed(false);
+        setDraftDisplayRect(null);
+      } else {
+        setDraftDisplayRect(null);
+        setAddFaceRectConfirmed(false);
+      }
+      return next;
+    });
+    setFaceToolError(null);
+  }, []);
 
   const updateHoverFromClientPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -435,6 +843,8 @@ export function AssetPreviewModal({
         !layout ||
         faces.length === 0 ||
         editMode ||
+        addFaceMode ||
+        geometryEditingFaceId ||
         editingFaceIdRef.current
       ) {
         setHoveredFaceId(null);
@@ -467,17 +877,23 @@ export function AssetPreviewModal({
       }
       const pctX = ((lx - ir.x) / ir.width) * 100;
       const pctY = ((ly - ir.y) / ir.height) * 100;
-      const hit = pickFaceAtPercent(faces, pctX, pctY);
+      const hit = pickFaceAtPercent(
+        faces,
+        pctX,
+        pctY,
+        layout.naturalW,
+        layout.naturalH,
+      );
       setHoveredFaceId(hit?.id ?? null);
     },
-    [faces, layout, editMode],
+    [faces, layout, editMode, addFaceMode],
   );
 
   const attachViewportWheel = useCallback(() => {
     wheelCleanupRef.current?.();
     wheelCleanupRef.current = null;
     const el = viewportRef.current;
-    if (!open || !el || editMode) return;
+    if (!open || !el || editMode || faceToolCaptureActive) return;
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -510,7 +926,7 @@ export function AssetPreviewModal({
       el.removeEventListener("wheel", onWheel);
       wheelCleanupRef.current = null;
     };
-  }, [editMode, open]);
+  }, [editMode, faceToolCaptureActive, open]);
 
   const setViewportRef = useCallback(
     (el: HTMLDivElement | null) => {
@@ -529,7 +945,7 @@ export function AssetPreviewModal({
   }, [attachViewportWheel]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (editMode || e.button !== 0) return;
+    if (editMode || faceToolCaptureActive || e.button !== 0) return;
     e.preventDefault();
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
     dragging.current = true;
@@ -538,7 +954,7 @@ export function AssetPreviewModal({
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     updateHoverFromClientPoint(e.clientX, e.clientY);
-    if (editMode || !dragging.current) return;
+    if (editMode || faceToolCaptureActive || !dragging.current) return;
     const { x, y, tx: stx, ty: sty } = dragStart.current;
     setTx(stx + (e.clientX - x));
     setTy(sty + (e.clientY - y));
@@ -549,7 +965,7 @@ export function AssetPreviewModal({
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (editMode || !dragging.current) return;
+    if (editMode || faceToolCaptureActive || !dragging.current) return;
     dragging.current = false;
     try {
       (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
@@ -558,7 +974,7 @@ export function AssetPreviewModal({
     }
   };
 
-  const enterEditMode = useCallback(async () => {
+  const enterEditMode = useCallback(async (opts?: { crop?: boolean }) => {
     if (!asset) return;
     resetEditState();
     const src = assetOriginalPath(asset.id);
@@ -570,9 +986,18 @@ export function AssetPreviewModal({
       cropUrlRef.current = url;
       setCropImageUrl(url);
       const bmp = await createImageBitmap(blob);
-      setNaturalSize({ w: bmp.width, h: bmp.height });
+      const w = bmp.width;
+      const h = bmp.height;
+      setNaturalSize({ w, h });
+      const { width: rw, height: rh } = rotatedBoundingBoxSize(w, h, 0);
+      setCroppedAreaPixels(fullFramePixelRect(rw, rh));
+      prevCropRotationRef.current = 0;
       bmp.close();
+      setAddFaceMode(false);
+      setGeometryEditingFaceId(null);
+      setDraftDisplayRect(null);
       setEditMode(true);
+      setCropToolActive(!!opts?.crop);
       setScale(1);
       setTx(0);
       setTy(0);
@@ -591,16 +1016,15 @@ export function AssetPreviewModal({
     setFreeRotationDeg(0);
     setBrightness(100);
     setContrast(100);
-    setCropZoom(1);
-    setCrop({ x: 0, y: 0 });
-    setCroppedAreaPercent({ x: 0, y: 0, width: 100, height: 100 });
+    setCropToolActive(false);
+    prevCropRotationRef.current = 0;
     if (naturalSize) {
-      setCroppedAreaPixels({
-        x: 0,
-        y: 0,
-        width: naturalSize.w,
-        height: naturalSize.h,
-      });
+      const { width: rw, height: rh } = rotatedBoundingBoxSize(
+        naturalSize.w,
+        naturalSize.h,
+        0,
+      );
+      setCroppedAreaPixels(fullFramePixelRect(rw, rh));
     }
   }, [naturalSize]);
 
@@ -682,8 +1106,16 @@ export function AssetPreviewModal({
   const src = assetOriginalPath(asset.id);
 
   const footerHelp = editMode
-    ? "Order: 90° steps and free angle combine to rotate first, then crop, then brightness/contrast (preview matches saved image). Zoom the crop area with the mouse wheel."
-    : "Wheel: zoom · drag: pan · hover: face names · Esc or ✕: close";
+    ? cropToolActive
+      ? "Crop: drag on the image to draw a rectangle · drag inside to move · drag handles to resize · Rotate and sliders apply to the full image (rotate first, then crop on save)."
+      : "Crop, rotate, and brightness — save when done. Adjust face rectangles in the normal preview (close Edit or choose Done editing)."
+    : faceToolCaptureActive
+      ? "Drag handles to resize the face box · save or cancel on the toolbar chip · Esc closes the modal"
+      : addFaceMode && !addFaceRectConfirmed
+        ? "New face: drag a box on the image · resize with handles · ✓ when positioned"
+        : addFaceMode && addFaceRectConfirmed
+          ? "Link the new face to a person or create one · Back to reposition the box"
+          : "Wheel: zoom · drag: pan · face names always shown · pen on linked faces to move the box · Add face for a new rectangle · Esc or ✕: close";
 
   return (
     <>
@@ -691,97 +1123,141 @@ export function AssetPreviewModal({
       <DialogContent
         showCloseButton
         className={cn(
-          "flex max-h-[85vh] w-[85vw] max-w-[85vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[85vw]",
-          "h-[85vh]",
+          "!flex max-h-[85vh] h-[85vh] min-h-0 w-[85vw] max-w-[85vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[85vw]",
         )}
       >
         <DialogTitle className="sr-only">
           Preview: {asset.originalFileName || asset.id}
         </DialogTitle>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-popover px-2 py-1.5">
+        <div className="flex shrink-0 flex-col gap-1.5 border-b border-border/60 bg-popover px-2 py-1.5">
           {canEdit ? (
             <>
               {!editMode ? (
-                <Button type="button" size="sm" variant="secondary" onClick={enterEditMode}>
-                  Edit
-                </Button>
-              ) : (
-                <>
-                  <Button type="button" size="sm" variant="outline" onClick={exitEditMode}>
-                    Done editing
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    disabled={!dirty}
-                    onClick={revertEdits}
+                    variant="secondary"
+                    onClick={() => void enterEditMode()}
                   >
-                    Revert
+                    Edit
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="default"
-                    disabled={!dirty}
-                    onClick={() => {
-                      setSaveError(null);
-                      setSaveOpen(true);
-                    }}
+                    onClick={() => void enterEditMode({ crop: true })}
                   >
-                    Save…
+                    Crop
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setRotationQuarters((q) => (q + 1) % 4)
+                    variant={addFaceMode ? "secondary" : "outline"}
+                    disabled={
+                      !faceToolsInteractive ||
+                      !!geometryEditingFaceId ||
+                      geometrySaving
                     }
+                    onClick={toggleAddFaceMode}
                   >
-                    Rotate 90°
+                    {addFaceMode ? "Add face (on)" : "Add face"}
                   </Button>
-                  <label className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    Angle
-                    <input
-                      type="range"
-                      min={-180}
-                      max={180}
-                      step={0.5}
-                      value={freeRotationDeg}
-                      onChange={(e) =>
-                        setFreeRotationDeg(Number(e.target.value))
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={exitEditMode}>
+                      Done editing
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={cropToolActive ? "secondary" : "default"}
+                      onClick={() => {
+                        setCropToolActive((on) => !on);
+                        setAddFaceMode(false);
+                        setGeometryEditingFaceId(null);
+                        setDraftDisplayRect(null);
+                      }}
+                    >
+                      {cropToolActive ? "Crop (on)" : "Crop"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setRotationQuarters((q) => (q + 1) % 4)
                       }
-                      className="w-28 min-w-[5rem] sm:w-32"
-                      title="Free rotation in degrees (adds to 90° steps)"
-                    />
-                    <span className="w-8 shrink-0 tabular-nums">
-                      {Math.round(freeRotationDeg)}°
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    Brightness
-                    <input
-                      type="range"
-                      min={30}
-                      max={200}
-                      value={brightness}
-                      onChange={(e) => setBrightness(Number(e.target.value))}
-                      className="w-24"
-                    />
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    Contrast
-                    <input
-                      type="range"
-                      min={30}
-                      max={200}
-                      value={contrast}
-                      onChange={(e) => setContrast(Number(e.target.value))}
-                      className="w-24"
-                    />
-                  </label>
+                    >
+                      Rotate 90°
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!dirty}
+                      onClick={revertEdits}
+                    >
+                      Revert
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      disabled={!dirty}
+                      onClick={() => {
+                        setSaveError(null);
+                        setSaveOpen(true);
+                      }}
+                    >
+                      Save…
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      Angle
+                      <input
+                        type="range"
+                        min={-180}
+                        max={180}
+                        step={0.5}
+                        value={freeRotationDeg}
+                        onChange={(e) =>
+                          setFreeRotationDeg(Number(e.target.value))
+                        }
+                        className="w-28 min-w-[5rem] sm:w-32"
+                        title="Free rotation in degrees (adds to 90° steps)"
+                      />
+                      <span className="w-8 shrink-0 tabular-nums">
+                        {Math.round(freeRotationDeg)}°
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      Brightness
+                      <input
+                        type="range"
+                        min={30}
+                        max={200}
+                        value={brightness}
+                        onChange={(e) => setBrightness(Number(e.target.value))}
+                        className="w-24"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      Contrast
+                      <input
+                        type="range"
+                        min={30}
+                        max={200}
+                        value={contrast}
+                        onChange={(e) => setContrast(Number(e.target.value))}
+                        className="w-24"
+                      />
+                    </label>
+                  </div>
                 </>
               )}
             </>
@@ -793,13 +1269,18 @@ export function AssetPreviewModal({
           {saveError ? (
             <span className="text-xs text-destructive">{saveError}</span>
           ) : null}
+          {faceToolError ? (
+            <span className="text-xs text-destructive">{faceToolError}</span>
+          ) : null}
         </div>
 
         <div
           ref={setViewportRef}
           className={cn(
-            "relative flex min-h-0 flex-1 overflow-hidden bg-black/90",
-            editMode ? "cursor-default" : "cursor-grab items-center justify-center active:cursor-grabbing",
+            "relative min-h-0 flex-1 overflow-hidden bg-black/90",
+            editMode
+              ? "flex w-full cursor-default flex-col"
+              : "flex cursor-grab items-center justify-center active:cursor-grabbing",
           )}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -808,32 +1289,18 @@ export function AssetPreviewModal({
           onPointerLeave={onPointerLeave}
           style={{ touchAction: editMode ? "auto" : "none" }}
         >
-          {editMode && cropImageUrl && naturalSize ? (
-            <div className="relative min-h-0 w-full flex-1">
-              <Cropper
-                image={cropImageUrl}
-                crop={crop}
-                zoom={cropZoom}
-                rotation={cropRotationDeg}
-                cropShape="rect"
-                showGrid={false}
-                onCropChange={setCrop}
-                onZoomChange={setCropZoom}
-                onCropComplete={(p, pixels) => {
-                  setCroppedAreaPercent(p);
-                  setCroppedAreaPixels(pixels);
-                }}
-                restrictPosition
-                style={{
-                  containerStyle: {
-                    width: "100%",
-                    height: "100%",
-                    position: "relative",
-                  },
-                  mediaStyle: {
-                    filter: `brightness(${brightness}%) contrast(${contrast}%)`,
-                  },
-                }}
+          {editMode && cropImageUrl && naturalSize && croppedAreaPixels ? (
+            <div className="relative min-h-0 flex-1">
+              <EditImageCrop
+                imageUrl={cropImageUrl}
+                naturalW={naturalSize.w}
+                naturalH={naturalSize.h}
+                rotationDeg={cropRotationDeg}
+                brightness={brightness}
+                contrast={contrast}
+                cropPixels={croppedAreaPixels}
+                onCropPixelsChange={setCroppedAreaPixels}
+                cropToolActive={cropToolActive}
               />
             </div>
           ) : (
@@ -858,9 +1325,18 @@ export function AssetPreviewModal({
                   className="block max-h-full max-w-full select-none object-contain"
                   onLoad={measureImageLayout}
                 />
-                {imageRect && faces.length > 0 ? (
+                {imageRect &&
+                layout &&
+                faceChromeVisible &&
+                canEdit ? (
                   <div
-                    className="pointer-events-none absolute z-10"
+                    className={cn(
+                      "absolute",
+                      geometryEditingFaceId ||
+                      (addFaceMode && !addFaceRectConfirmed)
+                        ? "z-[55]"
+                        : "pointer-events-none z-20",
+                    )}
                     style={{
                       left: imageRect.x,
                       top: imageRect.y,
@@ -868,29 +1344,96 @@ export function AssetPreviewModal({
                       height: imageRect.height,
                     }}
                   >
-                    {faces.map((face) => {
-                      const box = faceBoxPercent(face);
+                    <EditImageFacesOverlay
+                      layoutW={imageRect.width}
+                      layoutH={imageRect.height}
+                      imageWidth={layout.naturalW}
+                      imageHeight={layout.naturalH}
+                      faces={faces}
+                      faceChromeVisible
+                      faceToolsInteractive={faceToolsInteractive}
+                      geometryEditingFaceId={geometryEditingFaceId}
+                      onGeometryEditingFaceIdChange={setGeometryEditingFaceId}
+                      draftDisplayRect={draftDisplayRect}
+                      onDraftDisplayRectChange={setDraftDisplayRect}
+                      onGeometryCommitted={(faceId, pixels) =>
+                        void handleGeometryCommitted(faceId, pixels)
+                      }
+                      geometrySaving={geometrySaving}
+                      addFaceMode={addFaceMode}
+                      addFaceRectConfirmed={addFaceRectConfirmed}
+                      onAddFaceRectConfirm={confirmAddFaceRect}
+                      onAddFaceCancel={cancelAddFace}
+                      showFaceOutlines={Boolean(addFaceMode)}
+                      showRectanglePens={false}
+                      onGeometrySave={() => void saveFaceGeometry()}
+                      onGeometryCancel={cancelFaceGeometry}
+                    />
+                  </div>
+                ) : null}
+                {imageRect && layout && faces.length > 0 ? (
+                  <div
+                    className="pointer-events-none absolute z-30"
+                    style={{
+                      left: imageRect.x,
+                      top: imageRect.y,
+                      width: imageRect.width,
+                      height: imageRect.height,
+                    }}
+                  >
+                    {facesPaintOrder.map((face) => {
+                      const box = faceBoxOnImage(
+                        face,
+                        layout.naturalW,
+                        layout.naturalH,
+                      );
                       if (!box) return null;
                       const emphasized = emphasizedFaceId === face.id;
+                      const stackFront = stackFrontFaceId === face.id;
+                      const isLinked = Boolean(face.person?.id);
+                      const rectEditing = geometryEditingFaceId === face.id;
                       return (
                         <FaceNameBox
                           key={`${face.id}-${face.person?.id ?? "unlinked"}`}
                           faceId={face.id}
                           personId={face.person?.id ?? null}
                           name={face.person?.name ?? ""}
+                          accurateFaceOutline
+                          suppressOutline={rectEditing}
                           className={cn(
-                            "box-border transition-colors duration-150",
+                            "transition-colors duration-150",
                             emphasized
                               ? "border-2 border-primary shadow-[0_0_0_1px_rgba(0,0,0,0.85)]"
                               : "border border-white/45",
                           )}
-                          style={{
-                            left: `${box.left}%`,
-                            top: `${box.top}%`,
-                            width: `${box.width}%`,
-                            height: `${box.height}%`,
-                          }}
+                          style={faceBoxPercentStyle(box)}
+                          stackFront={stackFront}
                           showLabel={emphasized}
+                          alwaysShowLabel
+                          unlinkedPlaceholder="Unknown"
+                          onSelectedChange={(selected) => {
+                            setSelectedFaceId((current) => {
+                              if (selected) return face.id;
+                              return current === face.id ? null : current;
+                            });
+                          }}
+                          rectangleAdjust={
+                            canEdit && faceChromeVisible && isLinked
+                              ? {
+                                  enabled: true,
+                                  disabled: !faceToolsInteractive,
+                                  editing: geometryEditingFaceId === face.id,
+                                  saving: geometrySaving,
+                                  blockedByOther:
+                                    addFaceMode ||
+                                    Boolean(
+                                      geometryEditingFaceId &&
+                                        geometryEditingFaceId !== face.id,
+                                    ),
+                                  onStart: () => startFaceGeometryEdit(face),
+                                }
+                              : undefined
+                          }
                           onMouseEnter={() => setHoveredFaceId(face.id)}
                           onMouseLeave={() => {
                             if (editingFaceIdRef.current === face.id) {
@@ -914,17 +1457,7 @@ export function AssetPreviewModal({
                             );
                             patchCachedFacePerson(asset.id, faceId, person);
                           }}
-                          onUnlinked={(faceId) => {
-                            if (!asset) return;
-                            setFaces((prev) =>
-                              prev.map((item) =>
-                                item.id === faceId
-                                  ? { ...item, person: null }
-                                  : item,
-                              ),
-                            );
-                            patchCachedFaceUnlinked(asset.id, faceId);
-                          }}
+                          onRequestUnlink={(faceId) => setUnlinkFaceId(faceId)}
                         />
                       );
                     })}
@@ -933,16 +1466,98 @@ export function AssetPreviewModal({
               </div>
             </div>
           )}
+          <AddFaceTagPanel
+            open={
+              addFaceMode &&
+              addFaceRectConfirmed &&
+              faceToolsInteractive &&
+              !geometryEditingFaceId &&
+              !editMode
+            }
+            onOpenChange={(open) => {
+              if (!open) {
+                cancelAddFace();
+              }
+            }}
+            onBack={() => {
+              setAddFaceRectConfirmed(false);
+              setFaceToolError(null);
+            }}
+            onCancel={cancelAddFace}
+            onTagged={(person) => void handleAddFaceTagged(person)}
+            saving={addFaceSaving}
+            setSaving={setAddFaceSaving}
+            error={faceToolError}
+            setError={setFaceToolError}
+          />
         </div>
 
-        <p className="shrink-0 border-t border-border/60 bg-popover px-3 py-2 text-xs text-muted-foreground">
-          {footerHelp}
-        </p>
+        <div className="relative z-10 flex shrink-0 flex-col border-t border-border/60 bg-popover">
+          <div className="px-3 py-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Description
+              </span>
+              <textarea
+                ref={descriptionTextareaRef}
+                value={descriptionDraft}
+                disabled={descriptionSaving || !asset}
+                rows={3}
+                placeholder="Add a description…"
+                className={cn(
+                  "max-h-[5.5rem] min-h-[3.5rem] resize-y rounded-md border border-input bg-background px-2 py-1.5 text-sm leading-snug outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  descriptionError && "border-destructive",
+                )}
+                onChange={(e) => {
+                  setDescriptionDraft(e.target.value);
+                  setDescriptionError(null);
+                }}
+                onFocus={() => {
+                  descriptionFocusedRef.current = true;
+                  setDescriptionError(null);
+                }}
+                onBlur={() => {
+                  descriptionFocusedRef.current = false;
+                  void saveDescriptionIfChanged();
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              />
+              {descriptionSaving ? (
+                <span className="text-[11px] text-muted-foreground">
+                  Saving…
+                </span>
+              ) : descriptionError ? (
+                <span className="text-[11px] text-destructive">
+                  {descriptionError}
+                </span>
+              ) : null}
+            </label>
+          </div>
+          <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+            {footerHelp}
+          </p>
+        </div>
       </DialogContent>
     </Dialog>
 
     <ConfirmDialog
+      open={unlinkFaceId !== null}
+      onOpenChange={(next) => {
+        if (!next && !unlinkLoading) setUnlinkFaceId(null);
+      }}
+      title="Unlink this face?"
+      description="This removes the face from the linked person in Immich. You can assign a name again afterward."
+      confirmLabel="Unlink"
+      confirmVariant="destructive"
+      loading={unlinkLoading}
+      elevated
+      onConfirm={() => void confirmUnlinkFace()}
+    />
+
+    <ConfirmDialog
       open={saveOpen}
+      elevated
       onOpenChange={setSaveOpen}
       title="Replace file in Immich?"
       description="This uploads a new file and removes the current asset. The photo will get a new asset id. Albums, favorites, and other links are copied from the old asset when the server allows."

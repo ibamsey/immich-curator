@@ -31,6 +31,13 @@ export const DEFAULT_GRID_QUERY: GridQuery = {
   groupBy: null,
 };
 
+/** Explore album grid: sections per capture day, newest days first. */
+export const EXPLORE_GRID_QUERY: GridQuery = {
+  sort: { fieldId: "localDateTime", direction: "desc" },
+  filters: [],
+  groupBy: "captureDate",
+};
+
 export type AssetQueryGroup = {
   key: string;
   label: string;

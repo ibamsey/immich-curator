@@ -6,6 +6,11 @@ import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
 import { formatPhysicalSizeSummary } from "@/components/assets/asset-metadata-fields";
 import { AssetPreviewModal } from "@/components/grid/asset-preview-modal";
 import type { GridAsset } from "@/lib/assets/grid-asset";
+import {
+  faceBoxPercent,
+  faceCropImageStyle,
+} from "@/lib/people/face-box-layout";
+import type { PersonAssetLinkedFaceHint } from "@/lib/people/person-asset-linked-faces";
 
 type PersonAssetListProps = {
   assets: GridAsset[];
@@ -13,6 +18,7 @@ type PersonAssetListProps = {
   onSelect: (assetId: string) => void;
   onOpenInExplore?: (assetId: string) => void;
   scanDefaultDpi?: number;
+  personLinkedFacesByAsset?: Record<string, PersonAssetLinkedFaceHint>;
 };
 
 function descriptionSnippet(description: string | undefined, max = 120): string {
@@ -28,6 +34,7 @@ export function PersonAssetList({
   onSelect,
   onOpenInExplore,
   scanDefaultDpi = 600,
+  personLinkedFacesByAsset,
 }: PersonAssetListProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<GridAsset | null>(null);
@@ -42,6 +49,20 @@ export function PersonAssetList({
       {assets.map((asset) => {
         const selected = asset.id === selectedId;
         const physicalSummary = formatPhysicalSizeSummary(asset, scanDefaultDpi);
+        const linkedHint = personLinkedFacesByAsset?.[asset.id];
+        const face = linkedHint?.sampleFace;
+        const faceBox =
+          face &&
+          faceBoxPercent({
+            id: face.id,
+            boundingBoxX1: face.boundingBoxX1,
+            boundingBoxY1: face.boundingBoxY1,
+            boundingBoxX2: face.boundingBoxX2,
+            boundingBoxY2: face.boundingBoxY2,
+            imageWidth: face.imageWidth,
+            imageHeight: face.imageHeight,
+            person: null,
+          });
         return (
           <div
             key={asset.id}
@@ -71,8 +92,17 @@ export function PersonAssetList({
                 src={assetThumbnailPath(asset.id)}
                 alt=""
                 loading="lazy"
-                className="size-full object-cover"
+                className={faceBox ? undefined : "size-full object-cover"}
+                style={faceBox ? faceCropImageStyle(faceBox) : undefined}
               />
+              {linkedHint && linkedHint.count > 1 ? (
+                <span
+                  className="absolute right-0 top-0 z-10 min-w-[1.1rem] rounded-bl-sm bg-primary px-0.5 text-center text-[9px] font-semibold leading-tight text-primary-foreground shadow"
+                  title={`${linkedHint.count} people tagged on this photo`}
+                >
+                  {linkedHint.count}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"

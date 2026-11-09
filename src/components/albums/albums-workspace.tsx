@@ -306,6 +306,11 @@ export function AlbumsWorkspace({
             if (!open) setFullPreviewAsset(null);
           }}
           asset={fullPreviewAsset}
+          onAssetUpdated={(updated) => {
+            if (assetDetail?.id === updated.id) {
+              onAssetUpdated(updated);
+            }
+          }}
         />
       ) : null}
     </AppShell>

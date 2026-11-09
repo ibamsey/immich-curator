@@ -4,15 +4,13 @@ import { useState } from "react";
 import { QueryableAssetGridSection } from "@/components/grid/queryable-asset-grid-section";
 import { AssetFacesSection } from "@/components/people/asset-faces-section";
 import { PersonLinkedFacesSection } from "@/components/people/person-linked-faces-section";
-import type { ImmichAsset, ImmichPerson } from "@/lib/immich/types";
+import type { ImmichPerson } from "@/lib/immich/types";
 import type { UnassignedFace } from "@/lib/people/unassigned-face";
 import type { PersonRhsPanelView } from "@/lib/people/person-rhs-panel";
 import { cn } from "@/lib/utils";
 
 type PersonContextPanelProps = {
   person: ImmichPerson | null;
-  assets: ImmichAsset[];
-  loadingAssets: boolean;
   sharedAlbumIds: string[];
   /** Persisted in workspace (+ sessionStorage): Photos vs Linked faces */
   panelView: PersonRhsPanelView;
@@ -38,7 +36,7 @@ function PersonContextPanelBody({
   onFaceUnlinkedFromPerson,
   onFaceLinkedFromPerson,
   cataloguePeople = [],
-}: Omit<PersonContextPanelProps, "person" | "assets" | "loadingAssets"> & {
+}: Omit<PersonContextPanelProps, "person"> & {
   person: ImmichPerson;
 }) {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -47,7 +45,6 @@ function PersonContextPanelBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0">
-      {/* Fixed header; scroll region below fills remaining panel height */}
       <div className="-mx-4 shrink-0 space-y-2 border-b border-border/60 bg-card px-4 pb-3">
         <div>
           <p className="text-sm font-medium">{person.name || "Unnamed"}</p>
@@ -64,28 +61,28 @@ function PersonContextPanelBody({
           aria-label="Person context"
           className="flex gap-1 rounded-full border border-border bg-muted/40 p-0.5"
         >
-        {(
-          [
-            ["photos", "Photos"],
-            ["faces", "Linked faces"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={panelView === id}
-            onClick={() => onPanelViewChange(id)}
-            className={cn(
-              "flex-1 rounded-full px-2 py-1 text-center text-[11px] transition-colors",
-              panelView === id
-                ? "bg-background font-medium text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </button>
-        ))}
+          {(
+            [
+              ["photos", "Photos"],
+              ["faces", "Linked faces"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={panelView === id}
+              onClick={() => onPanelViewChange(id)}
+              className={cn(
+                "flex-1 rounded-full px-2 py-1 text-center text-[11px] transition-colors",
+                panelView === id
+                  ? "bg-background font-medium text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pt-3">

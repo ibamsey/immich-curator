@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type DragEvent,
 } from "react";
@@ -30,6 +31,7 @@ type DuplicatesNameCatalogProps = {
   onPersonUpdated: (person: ImmichPerson) => void;
   onPersonDeleted: (personId: string) => void;
   onFaceUnlinkedFromPerson: (face: UnassignedFace) => void;
+  assetCountByPerson?: Record<string, number>;
 };
 
 async function fetchLinkedFacesForPerson(personId: string): Promise<{
@@ -309,11 +311,26 @@ function DuplicateGroupSection({
   const [loadErrorByPerson, setLoadErrorByPerson] = useState<
     Record<string, string | undefined>
   >({});
+  const sectionRef = useRef<HTMLElement>(null);
+  const [facesRequested, setFacesRequested] = useState(false);
 
-  // Depend only on `gKey`, not `members`: `duplicateNameGroups` rebuilds new `members`
-  // arrays each parent render, so `[gKey, members]` retriggered forever and cancelled
-  // every in-flight fetch — faces stayed on "Loading…".
   useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || facesRequested) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setFacesRequested(true);
+        }
+      },
+      { rootMargin: "120px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [facesRequested]);
+
+  useEffect(() => {
+    if (!facesRequested) return;
     const ids = members.map((m) => m.id);
     let cancelled = false;
 
@@ -341,7 +358,7 @@ function DuplicateGroupSection({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- members ref changes every render; gKey tracks identity
-  }, [gKey]);
+  }, [facesRequested, gKey]);
 
   const personById = useMemo(() => {
     const map = new Map<string, ImmichPerson>();
@@ -554,6 +571,7 @@ function DuplicateGroupSection({
 
   return (
     <section
+      ref={sectionRef}
       className="rounded-lg border border-border bg-muted/20 p-3"
       role="listitem"
     >

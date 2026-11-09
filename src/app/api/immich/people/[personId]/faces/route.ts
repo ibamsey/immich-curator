@@ -3,6 +3,7 @@ import {
   listLinkedFacePanelRowsForPerson,
   listPersonFacePanelRowsForPerson,
 } from "@/lib/immich/faces";
+import { getSharedAlbumIds } from "@/lib/immich/shared-album-scope";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 
 export const maxDuration = 120;
@@ -14,10 +15,11 @@ export async function GET(request: Request, { params }: Params) {
     const { personId } = await params;
     const operatorUserId = await resolveOperatorUserId();
     const mode = new URL(request.url).searchParams.get("mode");
+    const sharedAlbumIds = await getSharedAlbumIds(operatorUserId);
     const rows =
-      mode === "linked"
-        ? await listLinkedFacePanelRowsForPerson(personId)
-        : await listPersonFacePanelRowsForPerson(personId, operatorUserId);
+      mode === "scan"
+        ? await listPersonFacePanelRowsForPerson(personId, operatorUserId)
+        : await listLinkedFacePanelRowsForPerson(personId, sharedAlbumIds);
     return NextResponse.json({ rows });
   } catch (e) {
     const message =

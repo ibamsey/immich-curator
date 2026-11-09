@@ -8,7 +8,7 @@ import {
   type MouseEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Link2OffIcon } from "lucide-react";
+import { Link2OffIcon, PencilIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -24,12 +24,37 @@ type FaceNameBoxProps = {
   className?: string;
   style?: CSSProperties;
   showLabel?: boolean;
+  /** Keep name chip visible without hover (e.g. preview modal). */
+  alwaysShowLabel?: boolean;
+  /** Shown when unlinked and name empty (default Unnamed). */
+  unlinkedPlaceholder?: string;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onEditingChange?: (editing: boolean) => void;
   onSaved: (faceId: string, person: ImmichPerson) => void;
   /** After unlinking; omitted if callers do not need to refresh face lists. */
   onUnlinked?: (faceId: string) => void;
+  /** When set, skip nested confirm dialog (e.g. inside another modal). */
+  onRequestUnlink?: (faceId: string) => void;
+  /** Draw border on exact face bounds; hit slop does not shift the outline (modal). */
+  accurateFaceOutline?: boolean;
+  /** Hide the face rectangle border (e.g. while geometry editor is active). */
+  suppressOutline?: boolean;
+  /** Paint this box (and name chip) above overlapping siblings. */
+  stackFront?: boolean;
+  /** Linked face rectangle selection toggled by click. */
+  onSelectedChange?: (selected: boolean) => void;
+  /** Optional face-rectangle adjust (preview modal). */
+  rectangleAdjust?: {
+    enabled: boolean;
+    disabled?: boolean;
+    editing: boolean;
+    saving?: boolean;
+    blockedByOther?: boolean;
+    onStart: () => void;
+    onSave?: () => void;
+    onCancel?: () => void;
+  };
 };
 
 function fieldWidth(text: string): string {
@@ -41,7 +66,7 @@ function chipPlacement(style?: CSSProperties): string {
   const top = typeof style?.top === "string" ? parseFloat(style.top) : 0;
   const left = typeof style?.left === "string" ? parseFloat(style.left) : 0;
   return cn(
-    "absolute z-10",
+    "absolute z-[60]",
     top >= 20 ? "bottom-full mb-0.5" : "top-0",
     left > 50 ? "right-0" : "left-0",
   );
@@ -61,11 +86,19 @@ export function FaceNameBox({
   className,
   style,
   showLabel = true,
+  alwaysShowLabel = false,
+  unlinkedPlaceholder = "Unnamed",
   onMouseEnter,
   onMouseLeave,
   onEditingChange,
   onSaved,
   onUnlinked,
+  onRequestUnlink,
+  accurateFaceOutline = false,
+  suppressOutline = false,
+  stackFront = false,
+  onSelectedChange,
+  rectangleAdjust,
 }: FaceNameBoxProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -94,7 +127,7 @@ export function FaceNameBox({
     }
   }, [name]);
 
-  const label = name.trim() || "Unnamed";
+  const label = name.trim() || unlinkedPlaceholder;
   const placement = chipPlacement(style);
   const hitSlop = hitSlopClass(style);
   const isLinked = Boolean(personId);
@@ -134,6 +167,7 @@ export function FaceNameBox({
     if (!id) return;
     clearClickTimer();
     setSelected(false);
+    onSelectedChange?.(false);
     setEditingState(false);
     router.push(`/people?personId=${encodeURIComponent(id)}`);
   };
@@ -151,6 +185,7 @@ export function FaceNameBox({
       }
       clearClickTimer();
       setSelected(false);
+      onSelectedChange?.(false);
       setEditingState(false);
       setUnlinkOpen(false);
       onUnlinked?.(faceId);
@@ -167,6 +202,7 @@ export function FaceNameBox({
     setEditingState(false);
     if (isLinked) {
       setSelected(false);
+      onSelectedChange?.(false);
     }
   };
 
@@ -212,11 +248,47 @@ export function FaceNameBox({
   );
 
   /** Selected or editing: keep chip visible even if parent `showLabel` went false on hover-out. */
+  const rectangleEditing = Boolean(rectangleAdjust?.editing);
   const showLinkedChrome =
     isLinked &&
-    (selected || editing || (showLabel && hoverInside));
+    (alwaysShowLabel ||
+      selected ||
+      editing ||
+      rectangleEditing ||
+      (showLabel && hoverInside));
   const showUnlink = showLinkedChrome;
-  const showChipContents = isLinked ? showLinkedChrome : showLabel || editing;
+  const showChipContents = isLinked
+    ? showLinkedChrome
+    : alwaysShowLabel || showLabel || editing;
+
+  const rectanglePen =
+    isLinked &&
+    rectangleAdjust?.enabled &&
+    !rectangleEditing &&
+    !rectangleAdjust.blockedByOther ? (
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="secondary"
+        disabled={rectangleAdjust.disabled}
+        className="pointer-events-auto absolute bottom-0 left-0 z-[70] size-7 -translate-x-1/4 translate-y-1/4 shadow-md"
+        title={
+          rectangleAdjust.disabled
+            ? "Finish the current action before adjusting face boxes"
+            : "Edit face rectangle"
+        }
+        aria-label="Edit face rectangle"
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          rectangleAdjust.onStart();
+        }}
+      >
+        <PencilIcon className="size-4" />
+      </Button>
+    ) : null;
 
   const unlinkButton = showUnlink ? (
     <Button
@@ -232,6 +304,10 @@ export function FaceNameBox({
         e.stopPropagation();
         clearClickTimer();
         setError(null);
+        if (onRequestUnlink) {
+          onRequestUnlink(faceId);
+          return;
+        }
         setUnlinkOpen(true);
       }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -248,7 +324,11 @@ export function FaceNameBox({
 
     if (isLinked) {
       if (!editing) {
-        setSelected((s) => !s);
+        setSelected((s) => {
+          const next = !s;
+          onSelectedChange?.(next);
+          return next;
+        });
         setDraft(name);
         setError(null);
       }
@@ -272,41 +352,75 @@ export function FaceNameBox({
     }
   };
 
+  const outlineClass = cn(
+    "box-border",
+    suppressOutline
+      ? "border-transparent"
+      : className,
+    isLinked &&
+      selected &&
+      !editing &&
+      !suppressOutline &&
+      "ring-2 ring-primary ring-offset-1 ring-offset-background/80",
+  );
+
   return (
     <>
       <div
         data-face-name-root
         className={cn(
-          "pointer-events-auto absolute cursor-pointer",
-          hitSlop,
-          isLinked && selected && !editing && "ring-2 ring-primary ring-offset-1 ring-offset-background/80",
-          className,
+          "absolute",
+          stackFront ? "z-[45]" : "z-[10]",
+          accurateFaceOutline ? "" : hitSlop,
+          !accurateFaceOutline && outlineClass,
         )}
         style={style}
-        title={
-          isLinked
-            ? "Hover or select to show name. Click name to edit. Double-click to open in People."
-            : "Click to name this face."
-        }
-        aria-label={
-          isLinked
-            ? `${label}. Hover or click rectangle to select; click name to edit.`
-            : `${label}. Click to name this face.`
-        }
-        aria-pressed={isLinked ? selected || editing : undefined}
-        onMouseEnter={() => {
-          setHoverInside(true);
-          onMouseEnter?.();
-        }}
-        onMouseLeave={() => {
-          setHoverInside(false);
-          onMouseLeave?.();
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={handleRootClick}
-        onDoubleClick={handleRootDoubleClick}
       >
+        {accurateFaceOutline ? (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 z-0",
+              outlineClass,
+            )}
+            aria-hidden
+          />
+        ) : null}
+        {accurateFaceOutline ? (
+          <div className="pointer-events-none absolute inset-0 z-[15]">
+            {rectanglePen}
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "absolute inset-0 z-10 cursor-pointer",
+            accurateFaceOutline ? hitSlop : "inset-0",
+            rectangleEditing ? "pointer-events-none" : "pointer-events-auto",
+          )}
+          title={
+            isLinked
+              ? "Hover or select to show name. Click name to edit. Double-click to open in People."
+              : "Click to name this face."
+          }
+          aria-label={
+            isLinked
+              ? `${label}. Hover or click rectangle to select; click name to edit.`
+              : `${label}. Click to name this face.`
+          }
+          aria-pressed={isLinked ? selected || editing : undefined}
+          onMouseEnter={() => {
+            setHoverInside(true);
+            onMouseEnter?.();
+          }}
+          onMouseLeave={() => {
+            setHoverInside(false);
+            onMouseLeave?.();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={handleRootClick}
+          onDoubleClick={handleRootDoubleClick}
+        >
+        {!accurateFaceOutline ? rectanglePen : null}
         {editing ? (
           <div
             className={cn(
@@ -396,18 +510,21 @@ export function FaceNameBox({
             </button>
           </div>
         ) : null}
+        </div>
       </div>
 
-      <ConfirmDialog
-        open={unlinkOpen}
-        onOpenChange={setUnlinkOpen}
-        title="Unlink this face?"
-        description="This removes the face from the linked person in Immich. You can assign a name again afterward."
-        confirmLabel="Unlink"
-        confirmVariant="destructive"
-        loading={unlinking}
-        onConfirm={runUnlink}
-      />
+      {onRequestUnlink ? null : (
+        <ConfirmDialog
+          open={unlinkOpen}
+          onOpenChange={setUnlinkOpen}
+          title="Unlink this face?"
+          description="This removes the face from the linked person in Immich. You can assign a name again afterward."
+          confirmLabel="Unlink"
+          confirmVariant="destructive"
+          loading={unlinking}
+          onConfirm={runUnlink}
+        />
+      )}
     </>
   );
 }

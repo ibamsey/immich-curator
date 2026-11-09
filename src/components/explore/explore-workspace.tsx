@@ -13,6 +13,7 @@ import {
 import type { ShellContext } from "@/lib/server/shell-context";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import { EXPLORE_GRID_QUERY } from "@/lib/assets/grid-query-types";
 import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
 import {
   AssetPreviewModal,
@@ -142,7 +143,8 @@ export function ExploreWorkspace({
       <QueryableAssetGridSection
         ref={gridRef}
         scope={{ mode: "album", albumId: album.id }}
-        storageKey={`explore:${album.id}`}
+        storageKey={`explore:${album.id}:by-capture-date`}
+        defaultQuery={EXPLORE_GRID_QUERY}
         selectedId={selectedId}
         onSelect={onSelect}
         onSelectionLost={() => {
@@ -164,6 +166,11 @@ export function ExploreWorkspace({
         }}
         asset={fullPreviewAsset}
         onAssetReplaced={onAssetReplaced}
+        onAssetUpdated={(updated) => {
+          if (detail?.id === updated.id) {
+            onAssetUpdated(updated);
+          }
+        }}
       />
     </AppShell>
   );

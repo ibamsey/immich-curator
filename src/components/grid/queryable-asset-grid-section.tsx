@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useState,
 } from "react";
 import { AssetGridToolbar } from "@/components/grid/asset-grid-toolbar";
@@ -16,7 +17,9 @@ import {
 import type { ImmichAssetWithEnrichment } from "@/lib/immich/types";
 import { useAssetGridQuery } from "@/components/grid/use-asset-grid-query";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
-import type { GridQueryScope } from "@/lib/assets/grid-query-types";
+import type { GridQuery, GridQueryScope } from "@/lib/assets/grid-query-types";
+import type { PersonAssetLinkedFaceHint } from "@/lib/people/person-asset-linked-faces";
+import { peopleCountHintsFromAssets } from "@/lib/people/person-asset-people-hints";
 type QueryableAssetGridSectionProps = {
   scope: GridQueryScope;
   storageKey: string | null;
@@ -35,6 +38,11 @@ type QueryableAssetGridSectionProps = {
    * Prefer opening from the RHS preview instead; omit for that UX.
    */
   openGridPreview?: boolean;
+  /** Initial query when nothing is stored (Explore uses capture-date sections). */
+  defaultQuery?: GridQuery;
+  /** When grid preview is open, sync metadata saves (e.g. modal description) to parent detail state. */
+  onPreviewAssetUpdated?: (asset: ImmichAssetWithEnrichment) => void;
+  personLinkedFacesByAsset?: Record<string, PersonAssetLinkedFaceHint>;
 };
 
 export type QueryableAssetGridSectionHandle = {
@@ -57,6 +65,9 @@ export const QueryableAssetGridSection = forwardRef<
   showToolbar = true,
   persistQuery = true,
   openGridPreview = false,
+  defaultQuery,
+  onPreviewAssetUpdated,
+  personLinkedFacesByAsset,
 }, ref) {
   const scanDefaultDpi = useScanDefaultDpi();
   const [gridPreviewOpen, setGridPreviewOpen] = useState(false);
@@ -74,6 +85,7 @@ export const QueryableAssetGridSection = forwardRef<
     refetch,
   } = useAssetGridQuery(scope, storageKey, {
     persistQuery: showToolbar && persistQuery,
+    defaultQuery,
   });
 
   const onPreviewAssetReplaced = useCallback(
@@ -93,6 +105,14 @@ export const QueryableAssetGridSection = forwardRef<
     removeAsset,
     refetch,
   ]);
+
+  const peopleHints = useMemo(() => {
+    if (personLinkedFacesByAsset) return personLinkedFacesByAsset;
+    if (scope.mode === "personShared") {
+      return peopleCountHintsFromAssets(assets);
+    }
+    return undefined;
+  }, [assets, personLinkedFacesByAsset, scope.mode]);
 
   useEffect(() => {
     onTotalChange?.(total);
@@ -139,6 +159,7 @@ export const QueryableAssetGridSection = forwardRef<
               : undefined
           }
           scanDefaultDpi={scanDefaultDpi}
+          personLinkedFacesByAsset={peopleHints}
         />
       )}
       {openGridPreview ? (
@@ -151,6 +172,7 @@ export const QueryableAssetGridSection = forwardRef<
           }}
           asset={gridPreviewAsset}
           onAssetReplaced={onPreviewAssetReplaced}
+          onAssetUpdated={onPreviewAssetUpdated}
         />
       ) : null}
     </div>

@@ -1,8 +1,5 @@
 import { immichJson } from "@/lib/immich/client";
-import {
-  getSharedAlbumScope,
-  personHasAssetsInSharedAlbums,
-} from "@/lib/immich/shared-album-scope";
+import { getSharedPeopleIndex } from "@/lib/immich/shared-people-index";
 import type {
   ImmichPeopleResponse,
   ImmichPerson,
@@ -29,6 +26,13 @@ export async function getAllPeople(): Promise<ImmichPerson[]> {
 
 export async function getPerson(personId: string): Promise<ImmichPerson> {
   return immichJson<ImmichPerson>(`/api/people/${personId}`);
+}
+
+export async function createPerson(name: string): Promise<ImmichPerson> {
+  return immichJson<ImmichPerson>("/api/people", {
+    method: "POST",
+    body: JSON.stringify({ name: name.trim() }),
+  });
 }
 
 /**
@@ -107,26 +111,23 @@ export async function mergePeopleIntoTarget(
 
 export async function getPeopleInSharedScope(
   operatorUserId: string | null,
-): Promise<{ people: ImmichPerson[]; sharedAlbumIds: string[] }> {
-  const { sharedAlbumIds } = await getSharedAlbumScope(operatorUserId);
+): Promise<{
+  people: ImmichPerson[];
+  sharedAlbumIds: string[];
+  assetCountByPerson: Record<string, number>;
+}> {
+  const index = await getSharedPeopleIndex(operatorUserId);
+  const { sharedAlbumIds, peopleInScope, assetCountByPerson } = index;
   if (sharedAlbumIds.length === 0) {
-    return { people: [], sharedAlbumIds: [] };
+    return { people: [], sharedAlbumIds: [], assetCountByPerson: {} };
   }
 
   const candidates = (await getAllPeople()).filter((p) => !p.isHidden);
-  const inScope: ImmichPerson[] = [];
-
-  for (const person of candidates) {
-    const ok = await personHasAssetsInSharedAlbums(
-      person.id,
-      sharedAlbumIds,
-    );
-    if (ok) inScope.push(person);
-  }
+  const inScope = candidates.filter((p) => peopleInScope.has(p.id));
 
   inScope.sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 
-  return { people: inScope, sharedAlbumIds };
+  return { people: inScope, sharedAlbumIds, assetCountByPerson };
 }

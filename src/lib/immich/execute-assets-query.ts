@@ -9,6 +9,7 @@ import type {
 } from "@/lib/assets/grid-query-types";
 import { immichJson } from "@/lib/immich/client";
 import { buildMetadataSearchBody } from "@/lib/immich/search-metadata-mapper";
+import { getSearchStatisticsTotal } from "@/lib/immich/search-statistics";
 import { getSharedAlbumIds } from "@/lib/immich/shared-album-scope";
 import { resolveOperatorUserId } from "@/lib/immich/users";
 
@@ -36,10 +37,20 @@ export async function executeAssetsQuery(
     size,
   );
 
-  const data = await immichJson<SearchResponse>("/api/search/metadata", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  const statsBody = { ...body };
+  delete statsBody.page;
+  delete statsBody.size;
+  delete statsBody.sortBy;
+
+  const [data, exactTotal] = await Promise.all([
+    immichJson<SearchResponse>("/api/search/metadata", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+    scope.mode === "personShared"
+      ? getSearchStatisticsTotal(statsBody)
+      : Promise.resolve(null as number | null),
+  ]);
 
   const normalized = data.assets.items.map(normalizeGridAsset);
   const config = loadCuratorConfig();
@@ -53,7 +64,7 @@ export async function executeAssetsQuery(
 
   return {
     assets,
-    total: data.assets.total,
+    total: exactTotal ?? data.assets.total,
     groups,
   };
 }

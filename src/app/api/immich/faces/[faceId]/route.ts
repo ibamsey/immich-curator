@@ -5,6 +5,7 @@ import {
   nameUnassignedFace,
   unlinkFaceFromPerson,
 } from "@/lib/immich/faces";
+import { invalidateSharedPeopleIndex } from "@/lib/immich/shared-people-index";
 
 type Params = { params: Promise<{ faceId: string }> };
 
@@ -21,6 +22,7 @@ export async function PUT(request: Request, { params }: Params) {
       "personId" in body
         ? await assignFaceToPerson(faceId, body.personId)
         : await nameUnassignedFace(faceId, body.name.trim());
+    invalidateSharedPeopleIndex();
     return NextResponse.json(person);
   } catch (e) {
     if (e instanceof z.ZodError) {
@@ -35,6 +37,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   try {
     const { faceId } = await params;
     await unlinkFaceFromPerson(faceId);
+    invalidateSharedPeopleIndex();
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to unlink face";

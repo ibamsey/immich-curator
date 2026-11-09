@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ImmichAssetFace } from "@/lib/immich/types";
 import {
+  displayRectToFacePixels,
+  faceBoxFromPixels,
+  faceBoxOnImage,
   faceBoxPercent,
+  faceBoxPercentToPixels,
+  faceBoxPixels,
+  faceBoxPixelsToPercent,
   faceCropImageStyle,
   objectCoverFaceBox,
+  percentBoxToDisplayRect,
 } from "@/lib/people/face-box-layout";
 
 describe("faceBoxPercent", () => {
@@ -55,6 +62,58 @@ describe("faceCropImageStyle", () => {
       left: "-100%",
       top: "-50%",
     });
+  });
+});
+
+describe("faceBoxOnImage", () => {
+  const face: ImmichAssetFace = {
+    id: "f1",
+    boundingBoxX1: 100,
+    boundingBoxY1: 100,
+    boundingBoxX2: 200,
+    boundingBoxY2: 300,
+    imageWidth: 1000,
+    imageHeight: 1000,
+    person: null,
+  };
+
+  it("matches faceBoxPercent when reference equals natural size", () => {
+    expect(faceBoxOnImage(face, 1000, 1000)).toEqual(faceBoxPercent(face));
+  });
+
+  it("rescales when natural height differs", () => {
+    const onTaller = faceBoxOnImage(face, 1000, 2000);
+    expect(onTaller?.top).toBe(10);
+    expect(onTaller?.height).toBe(20);
+  });
+});
+
+describe("faceBoxPixels round-trip", () => {
+  const face: ImmichAssetFace = {
+    id: "f1",
+    boundingBoxX1: 100,
+    boundingBoxY1: 50,
+    boundingBoxX2: 200,
+    boundingBoxY2: 150,
+    imageWidth: 1000,
+    imageHeight: 500,
+    person: null,
+  };
+
+  it("round-trips percent and pixels", () => {
+    const pixels = faceBoxPixels(face);
+    expect(pixels).not.toBeNull();
+    const pct = faceBoxPixelsToPercent(pixels!);
+    expect(pct).toEqual(faceBoxPercent(face));
+    expect(faceBoxPercentToPixels(pct, 1000, 500)).toEqual(pixels);
+  });
+
+  it("maps display rect through layout", () => {
+    const pct = faceBoxPercent(face)!;
+    const layout = { x: 10, y: 20, width: 800, height: 400 };
+    const disp = percentBoxToDisplayRect(pct, layout);
+    const back = displayRectToFacePixels(disp, layout, 1000, 500);
+    expect(back).toEqual(faceBoxFromPixels(1000, 500, 100, 50, 200, 150));
   });
 });
 

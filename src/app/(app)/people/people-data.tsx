@@ -23,6 +23,7 @@ export async function PeopleData({ searchParams }: PeopleDataProps) {
     ReturnType<typeof getPeopleInSharedScope>
   >["people"] = [];
   let initialSharedAlbumIds: string[] = [];
+  let initialAssetCountByPerson: Record<string, number> = {};
   let loadError: string | null = null;
 
   try {
@@ -30,6 +31,7 @@ export async function PeopleData({ searchParams }: PeopleDataProps) {
     const data = await getPeopleInSharedScope(operatorUserId);
     initialPeople = data.people;
     initialSharedAlbumIds = data.sharedAlbumIds;
+    initialAssetCountByPerson = data.assetCountByPerson;
   } catch (e) {
     loadError =
       e instanceof Error ? e.message : "Could not load people catalogue.";
@@ -40,6 +42,7 @@ export async function PeopleData({ searchParams }: PeopleDataProps) {
       shell={shell}
       initialPeople={initialPeople}
       initialSharedAlbumIds={initialSharedAlbumIds}
+      initialAssetCountByPerson={initialAssetCountByPerson}
       loadError={loadError}
       initialTab={peopleTabForSelection(
         initialPeople.find((person) => person.id === initialPersonId),

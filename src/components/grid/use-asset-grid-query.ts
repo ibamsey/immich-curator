@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, startTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   AssetQueryGroup,
   GridQuery,
@@ -15,25 +15,35 @@ type QueryResponse = {
   groups: AssetQueryGroup[] | null;
 };
 
-function loadStoredQuery(storageKey: string | null): GridQuery {
-  if (!storageKey || typeof window === "undefined") return DEFAULT_GRID_QUERY;
+function loadStoredQuery(
+  storageKey: string | null,
+  baseQuery: GridQuery,
+): GridQuery {
+  if (!storageKey || typeof window === "undefined") return baseQuery;
   try {
     const raw = sessionStorage.getItem(storageKey);
-    if (!raw) return DEFAULT_GRID_QUERY;
-    return { ...DEFAULT_GRID_QUERY, ...JSON.parse(raw) } as GridQuery;
+    if (!raw) return baseQuery;
+    const parsed = JSON.parse(raw) as Partial<GridQuery>;
+    return {
+      ...baseQuery,
+      ...parsed,
+      sort: { ...baseQuery.sort, ...parsed.sort },
+      filters: parsed.filters ?? baseQuery.filters,
+    };
   } catch {
-    return DEFAULT_GRID_QUERY;
+    return baseQuery;
   }
 }
 
 export function useAssetGridQuery(
   scope: GridQueryScope,
   storageKey: string | null,
-  options?: { persistQuery?: boolean },
+  options?: { persistQuery?: boolean; defaultQuery?: GridQuery },
 ) {
+  const baseQuery = options?.defaultQuery ?? DEFAULT_GRID_QUERY;
   const persistQuery = options?.persistQuery !== false && storageKey != null;
   const [query, setQueryState] = useState<GridQuery>(() =>
-    loadStoredQuery(persistQuery ? storageKey : null),
+    loadStoredQuery(persistQuery ? storageKey : null, baseQuery),
   );
   const [assets, setAssets] = useState<GridAsset[]>([]);
   const [groups, setGroups] = useState<AssetQueryGroup[] | null>(null);
@@ -87,10 +97,8 @@ export function useAssetGridQuery(
 
   useEffect(() => {
     let cancelled = false;
-    startTransition(() => {
-      setLoading(true);
-      setError(null);
-    });
+    setLoading(true);
+    setError(null);
     fetch("/api/immich/assets/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

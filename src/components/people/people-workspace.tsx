@@ -17,7 +17,7 @@ import { PersonContextPanel } from "@/components/people/person-context-panel";
 import { DuplicatesNameCatalog } from "@/components/people/duplicates-name-catalog";
 import { cn } from "@/lib/utils";
 import type { ShellContext } from "@/lib/server/shell-context";
-import type { ImmichAsset, ImmichPerson } from "@/lib/immich/types";
+import type { ImmichPerson } from "@/lib/immich/types";
 import {
   bucketPeople,
   peoplePageHref,
@@ -31,6 +31,10 @@ import {
   writeStoredPersonRhsPanelView,
 } from "@/lib/people/person-rhs-panel";
 import { groupPeopleBySimilarNames } from "@/lib/people/name-similarity-groups";
+import {
+  sortPeopleBySurnameFirst,
+  uniquePeopleByDisplayName,
+} from "@/lib/people/person-name-sort";
 
 type Selection =
   | { kind: "person"; id: string }
@@ -40,17 +44,14 @@ type PeopleWorkspaceProps = {
   shell: ShellContext;
   initialPeople: ImmichPerson[];
   initialSharedAlbumIds: string[];
+  initialAssetCountByPerson?: Record<string, number>;
   loadError: string | null;
   initialTab?: PeopleTab;
   initialSelectedPersonId?: string | null;
 };
 
 function sortPeople(people: ImmichPerson[]): ImmichPerson[] {
-  return [...people].sort((a, b) =>
-    (a.name ?? "").localeCompare(b.name ?? "", undefined, {
-      sensitivity: "base",
-    }),
-  );
+  return sortPeopleBySurnameFirst(people);
 }
 
 function upsertPerson(
@@ -64,6 +65,7 @@ export function PeopleWorkspace({
   shell,
   initialPeople,
   initialSharedAlbumIds,
+  initialAssetCountByPerson = {},
   loadError,
   initialTab = "people",
   initialSelectedPersonId = null,
@@ -71,12 +73,13 @@ export function PeopleWorkspace({
   const router = useRouter();
   const [people, setPeople] = useState(initialPeople);
   const [sharedAlbumIds, setSharedAlbumIds] = useState(initialSharedAlbumIds);
+  const [assetCountByPerson, setAssetCountByPerson] = useState(
+    initialAssetCountByPerson,
+  );
   const [tab, setTab] = useState<PeopleTab>(initialTab);
   const [selection, setSelection] = useState<Selection | null>(null);
   const selectionRef = useRef<Selection | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [assets, setAssets] = useState<ImmichAsset[]>([]);
-  const [loadingAssets, setLoadingAssets] = useState(false);
   const [detections, setDetections] = useState<UnassignedFace[]>([]);
   const [detectionsLoading, setDetectionsLoading] = useState(
     initialTab === "faces",
@@ -115,7 +118,15 @@ export function PeopleWorkspace({
     };
   }, []);
 
+  useEffect(() => {
+    setAssetCountByPerson(initialAssetCountByPerson);
+  }, [initialAssetCountByPerson]);
+
   const { named, unnamed } = bucketPeople(people);
+  const namedCatalogPeople = useMemo(
+    () => uniquePeopleByDisplayName(named),
+    [named],
+  );
   const duplicateNameGroups = useMemo(
     () => groupPeopleBySimilarNames(people),
     [people],
@@ -129,31 +140,6 @@ export function PeopleWorkspace({
       ? (detections.find((face) => face.id === selection.faceId) ?? null)
       : null;
 
-  const loadPersonAssets = useCallback((personId: string) => {
-    setLoadingAssets(true);
-    setAssets([]);
-    fetch(`/api/immich/people/${personId}/assets`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            assets: ImmichAsset[];
-            sharedAlbumIds: string[];
-          } | null,
-        ) => {
-          if (data) {
-            setAssets(data.assets);
-            setSharedAlbumIds(data.sharedAlbumIds);
-          }
-          setLoadingAssets(false);
-        },
-      )
-      .catch(() => {
-        setAssets([]);
-        setLoadingAssets(false);
-      });
-  }, []);
-
   const showPerson = useCallback(
     (personId: string, namedPerson: boolean) => {
       const stayOnDuplicates = tabRef.current === "duplicates";
@@ -165,10 +151,9 @@ export function PeopleWorkspace({
       setTab(nextTab);
       setSelection({ kind: "person", id: personId });
       setPanelOpen(true);
-      loadPersonAssets(personId);
       router.replace(peoplePageHref(nextTab, personId));
     },
-    [loadPersonAssets, router],
+    [router],
   );
 
   const onSelectPerson = useCallback(
@@ -269,16 +254,24 @@ export function PeopleWorkspace({
     [showPerson],
   );
 
-  const onFaceUnlinkedFromPerson = useCallback((face: UnassignedFace) => {
-    setDetections((prev) => {
-      if (prev.some((f) => f.id === face.id)) return prev;
-      return [face, ...prev];
-    });
-  }, []);
+  const onFaceUnlinkedFromPerson = useCallback(
+    (face: UnassignedFace) => {
+      setDetections((prev) => {
+        if (prev.some((f) => f.id === face.id)) return prev;
+        return [face, ...prev];
+      });
+      router.refresh();
+    },
+    [router],
+  );
 
-  const onFaceLinkedFromPerson = useCallback((face: UnassignedFace) => {
-    setDetections((prev) => prev.filter((f) => f.id !== face.id));
-  }, []);
+  const onFaceLinkedFromPerson = useCallback(
+    (face: UnassignedFace) => {
+      setDetections((prev) => prev.filter((f) => f.id !== face.id));
+      router.refresh();
+    },
+    [router],
+  );
 
   const onSelectFace = useCallback(
     (face: UnassignedFace) => {
@@ -327,8 +320,6 @@ export function PeopleWorkspace({
     ) : (
       <PersonContextPanel
         person={selectedPerson}
-        assets={assets}
-        loadingAssets={loadingAssets}
         sharedAlbumIds={sharedAlbumIds}
         panelView={personRhsPanelView}
         onPanelViewChange={setPersonRhsPanelView}
@@ -345,7 +336,7 @@ export function PeopleWorkspace({
   const subtitle = loadError
     ? loadError
     : tab === "people"
-      ? `${named.length} named`
+      ? `${namedCatalogPeople.length} unique names`
       : tab === "duplicates"
         ? `${duplicateNameGroups.length} similar-name group${duplicateNameGroups.length === 1 ? "" : "s"}`
       : detectionsLoading
@@ -398,12 +389,13 @@ export function PeopleWorkspace({
           </div>
           {tab === "people" ? (
             <PersonCatalogGrid
-              people={named}
+              people={namedCatalogPeople}
               cataloguePeople={people}
               selectedId={selection?.kind === "person" ? selection.id : null}
               onSelect={onSelectPerson}
               onPersonUpdated={onPersonUpdated}
               onPersonMerged={onPersonMerged}
+              assetCountByPerson={assetCountByPerson}
               emptyMessage="No named people yet. Name someone on the Faces tab."
             />
           ) : tab === "duplicates" ? (
@@ -417,6 +409,7 @@ export function PeopleWorkspace({
               onPersonUpdated={onPersonUpdated}
               onPersonDeleted={onPersonDeleted}
               onFaceUnlinkedFromPerson={onFaceUnlinkedFromPerson}
+              assetCountByPerson={assetCountByPerson}
             />
           ) : (
             <FacesCatalog

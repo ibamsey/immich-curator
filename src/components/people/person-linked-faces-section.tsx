@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2Icon, Link2OffIcon } from "lucide-react";
 import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
 import { faceBoxPercent, faceCropImageStyle } from "@/lib/people/face-box-layout";
@@ -14,6 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
+
+const LINKED_PAGE_SIZE = 30;
 
 type PersonLinkedFacesSectionProps = {
   person: ImmichPerson;
@@ -39,9 +41,11 @@ function rowLabel(row: PersonFacePanelRow): string {
 
 function FaceRowThumb({
   face,
+  linkedCountOnAsset,
   onOpenFullImage,
 }: {
   face: UnassignedFace;
+  linkedCountOnAsset?: number;
   onOpenFullImage: (assetId: string, faceId: string) => void;
 }) {
   const box = faceBoxPercent({
@@ -70,6 +74,14 @@ function FaceRowThumb({
         className={box ? undefined : "size-full object-cover"}
         style={box ? faceCropImageStyle(box) : undefined}
       />
+      {linkedCountOnAsset != null && linkedCountOnAsset > 1 ? (
+        <span
+          className="absolute right-0 top-0 z-10 min-w-[1.1rem] rounded-bl-sm bg-primary px-0.5 text-center text-[9px] font-semibold leading-tight text-primary-foreground shadow"
+          title={`${linkedCountOnAsset} linked faces on this photo`}
+        >
+          {linkedCountOnAsset}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -82,6 +94,9 @@ export function PersonLinkedFacesSection({
 }: PersonLinkedFacesSectionProps) {
   const [rows, setRows] = useState<PersonFacePanelRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanDone, setScanDone] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(LINKED_PAGE_SIZE);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [confirmUnlinkFace, setConfirmUnlinkFace] =
@@ -126,35 +141,69 @@ export function PersonLinkedFacesSection({
     [],
   );
 
-  const loadRows = useCallback(() => {
+  const fetchRows = useCallback(
+    async (mode: "linked" | "scan") => {
+      const url =
+        mode === "scan"
+          ? `/api/immich/people/${person.id}/faces?mode=scan`
+          : `/api/immich/people/${person.id}/faces?mode=linked`;
+      const res = await fetch(url);
+      const data = (await res.json()) as {
+        rows?: PersonFacePanelRow[];
+        message?: string;
+      };
+      if (!res.ok) throw new Error(data.message ?? "Failed to load faces");
+      return data.rows ?? [];
+    },
+    [person.id],
+  );
+
+  const loadLinkedRows = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/immich/people/${person.id}/faces`)
-      .then(async (res) => {
-        const data = (await res.json()) as {
-          rows?: PersonFacePanelRow[];
-          message?: string;
-        };
-        if (!res.ok) throw new Error(data.message ?? "Failed to load faces");
-        return data.rows ?? [];
-      })
+    setScanDone(false);
+    setVisibleCount(LINKED_PAGE_SIZE);
+    fetchRows("linked")
       .then(setRows)
       .catch((e: unknown) => {
         setRows([]);
         setError(e instanceof Error ? e.message : "Failed to load faces");
       })
       .finally(() => setLoading(false));
-  }, [person.id]);
+  }, [fetchRows]);
+
+  const runCandidateScan = useCallback(() => {
+    setScanLoading(true);
+    setError(null);
+    fetchRows("scan")
+      .then((scanRows) => {
+        setRows((prev) => {
+          const linkedIds = new Set(
+            prev.filter((r) => r.kind === "linked").map((r) => r.face.id),
+          );
+          const similar = scanRows.filter(
+            (r) =>
+              r.kind === "similar_unassigned" && !linkedIds.has(r.face.id),
+          );
+          return [...prev, ...similar];
+        });
+        setScanDone(true);
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : "Candidate scan failed");
+      })
+      .finally(() => setScanLoading(false));
+  }, [fetchRows]);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) loadRows();
+      if (!cancelled) loadLinkedRows();
     });
     return () => {
       cancelled = true;
     };
-  }, [loadRows]);
+  }, [loadLinkedRows]);
 
   const runUnlink = useCallback(async () => {
     if (!confirmUnlinkFace) return;
@@ -171,13 +220,13 @@ export function PersonLinkedFacesSection({
       }
       onFaceUnlinked?.(confirmUnlinkFace);
       setConfirmUnlinkFace(null);
-      loadRows();
+      loadLinkedRows();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unlink failed");
     } finally {
       setPendingId(null);
     }
-  }, [confirmUnlinkFace, onFaceUnlinked, loadRows]);
+  }, [confirmUnlinkFace, onFaceUnlinked, loadLinkedRows]);
 
   const runLink = useCallback(async () => {
     if (!confirmLinkRow) return;
@@ -196,15 +245,29 @@ export function PersonLinkedFacesSection({
       onPersonUpdated?.(data);
       onFaceLinked?.(confirmLinkRow.face);
       setConfirmLinkRow(null);
-      loadRows();
+      loadLinkedRows();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Link failed");
     } finally {
       setPendingId(null);
     }
-  }, [confirmLinkRow, person.id, onPersonUpdated, onFaceLinked, loadRows]);
+  }, [confirmLinkRow, person.id, onPersonUpdated, onFaceLinked, loadLinkedRows]);
 
   const personDisplay = person.name?.trim() || "this person";
+
+  const linkedCountByAsset = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      if (row.kind !== "linked") continue;
+      const id = row.face.assetId;
+      map.set(id, (map.get(id) ?? 0) + 1);
+    }
+    return map;
+  }, [rows]);
+
+  const linkedCount = rows.filter((r) => r.kind === "linked").length;
+  const visibleRows = rows.slice(0, visibleCount);
+  const hasMore = visibleCount < rows.length;
 
   if (loading) {
     return (
@@ -222,27 +285,39 @@ export function PersonLinkedFacesSection({
     );
   }
 
-  const linkedCount = rows.filter((r) => r.kind === "linked").length;
-
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {error ? (
         <p className="shrink-0 text-xs text-destructive">{error}</p>
       ) : null}
       <p className="shrink-0 text-xs text-muted-foreground">
-        All faces linked to this person, plus unlinked faces Immich still clusters with them
-        (1-based similarity rank from the people API for each face; lower = closer). Scans a
-        large slice of your library per load—huge libraries may not show every match yet. Link or
-        unlink.
+        Linked faces in shared albums for this person. Use “Find similar unassigned
+        faces” to scan the library for candidates (slow on large libraries).
         {linkedCount > 0 ? ` (${linkedCount} linked)` : ""}
       </p>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={scanLoading || scanDone}
+          onClick={() => runCandidateScan()}
+        >
+          {scanLoading
+            ? "Scanning…"
+            : scanDone
+              ? "Candidates loaded"
+              : "Find similar unassigned faces"}
+        </Button>
+      </div>
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No linked faces found, or nothing similar in the scanned scope.
+          No linked faces in shared albums for this person.
         </p>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
-          {rows.map((row) => {
+          {visibleRows.map((row) => {
             const { face } = row;
             const busy = pendingId !== null;
             return (
@@ -253,7 +328,15 @@ export function PersonLinkedFacesSection({
                   busy && "opacity-60",
                 )}
               >
-                <FaceRowThumb face={face} onOpenFullImage={openAssetPreview} />
+                <FaceRowThumb
+                  face={face}
+                  linkedCountOnAsset={
+                    row.kind === "linked"
+                      ? linkedCountByAsset.get(face.assetId)
+                      : undefined
+                  }
+                  onOpenFullImage={openAssetPreview}
+                />
                 <p className="min-w-0 flex-1 self-center text-xs text-muted-foreground">
                   {rowLabel(row)}
                 </p>
@@ -291,6 +374,17 @@ export function PersonLinkedFacesSection({
           })}
         </ul>
       )}
+      {hasMore ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="shrink-0 self-center text-xs"
+          onClick={() => setVisibleCount((n) => n + LINKED_PAGE_SIZE)}
+        >
+          Load more ({rows.length - visibleCount} remaining)
+        </Button>
+      ) : null}
       <ConfirmDialog
         open={confirmUnlinkFace !== null}
         onOpenChange={(open) => {
@@ -338,7 +432,7 @@ export function PersonLinkedFacesSection({
                 }
               : null,
           );
-          loadRows();
+          loadLinkedRows();
         }}
       />
     </div>

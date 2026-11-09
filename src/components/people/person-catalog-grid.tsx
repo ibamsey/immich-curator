@@ -14,7 +14,21 @@ type PersonCatalogGridProps = {
   onPersonUpdated: (person: ImmichPerson) => void;
   onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
   emptyMessage?: string;
+  /** Shared-scope photo counts per person (from server people index). */
+  assetCountByPerson?: Record<string, number>;
 };
+
+function SharedPhotoCountBadge({ count }: { count: number }) {
+  if (count < 2) return null;
+  return (
+    <span
+      className="absolute right-0.5 top-0.5 z-10 min-w-[1.25rem] rounded-sm bg-primary px-1 py-px text-center text-[10px] font-semibold leading-tight text-primary-foreground shadow"
+      title={`${count} photos in shared albums`}
+    >
+      {count}
+    </span>
+  );
+}
 
 function PersonCatalogTile({
   person,
@@ -23,6 +37,7 @@ function PersonCatalogTile({
   onPersonUpdated,
   onPersonMerged,
   cataloguePeople,
+  sharedPhotoCount,
 }: {
   person: ImmichPerson;
   selected: boolean;
@@ -30,6 +45,7 @@ function PersonCatalogTile({
   onPersonUpdated: (person: ImmichPerson) => void;
   onPersonMerged?: (removedPersonId: string, survivor: ImmichPerson) => void;
   cataloguePeople: ImmichPerson[];
+  sharedPhotoCount?: number;
 }) {
   return (
     <div
@@ -52,6 +68,9 @@ function PersonCatalogTile({
           loading="lazy"
           className="size-full object-cover"
         />
+        {sharedPhotoCount != null ? (
+          <SharedPhotoCountBadge count={sharedPhotoCount} />
+        ) : null}
       </button>
       <div className="p-2" onClick={(e) => e.stopPropagation()}>
         <PersonIdentityEditor
@@ -75,6 +94,7 @@ export function PersonCatalogGrid({
   onPersonUpdated,
   onPersonMerged,
   emptyMessage = "No people found on assets in albums shared with the operator. Share an album from Albums first.",
+  assetCountByPerson = {},
 }: PersonCatalogGridProps) {
   useEffect(() => {
     if (!selectedId) return;
@@ -104,6 +124,7 @@ export function PersonCatalogGrid({
           onPersonUpdated={onPersonUpdated}
           onPersonMerged={onPersonMerged}
           cataloguePeople={cataloguePeople ?? people}
+          sharedPhotoCount={assetCountByPerson[person.id]}
         />
       ))}
     </div>

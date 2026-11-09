@@ -6,7 +6,8 @@ import { assetThumbnailPath } from "@/lib/immich/asset-thumbnail-path";
 import { FaceNameBox } from "@/components/people/face-name-box";
 import {
   containedImageRect,
-  faceBoxPercent,
+  faceBoxOnImage,
+  faceBoxPercentStyle,
 } from "@/lib/people/face-box-layout";
 import {
   patchCachedFacePerson,
@@ -156,7 +157,11 @@ export function AssetPreviewWithFaces({
           }}
         >
           {faces.map((face) => {
-            const box = faceBoxPercent(face);
+            const box = faceBoxOnImage(
+              face,
+              layout.naturalW,
+              layout.naturalH,
+            );
             if (!box) return null;
             const hovered = hoveredFaceId === face.id;
             const editing = editingFaceId === face.id;
@@ -172,12 +177,7 @@ export function AssetPreviewWithFaces({
                     ? "border-primary bg-primary/15"
                     : "border-transparent hover:border-primary/70",
                 )}
-                style={{
-                  left: `${box.left}%`,
-                  top: `${box.top}%`,
-                  width: `${box.width}%`,
-                  height: `${box.height}%`,
-                }}
+                style={faceBoxPercentStyle(box)}
                 showLabel={hovered || editing}
                 onMouseEnter={() => setHoveredFaceId(face.id)}
                 onMouseLeave={() => {

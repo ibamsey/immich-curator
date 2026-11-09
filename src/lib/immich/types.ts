@@ -140,6 +140,7 @@ export type ImmichActivity = {
 
 export type AssetUpdatePayload = {
   description?: string;
+  /** Immich wall-clock capture time (…T…:…:00.000Z); maps to `dateTimeOriginal` on PUT. */
   localDateTime?: string;
 };
 

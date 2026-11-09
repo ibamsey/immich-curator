@@ -122,6 +122,13 @@ export const ASSET_FIELDS: AssetFieldDescriptor[] = [
     clientOnly: true,
   },
   {
+    id: "captureDate",
+    label: "Capture date",
+    valueType: "string",
+    capabilities: { sort: false, filter: false, group: true },
+    clientOnly: true,
+  },
+  {
     id: "physicalWidthMm",
     label: "Physical width (mm)",
     valueType: "number",

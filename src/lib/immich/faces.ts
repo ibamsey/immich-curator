@@ -2,6 +2,7 @@ import { immichJson, immichJsonTarget } from "@/lib/immich/client";
 import { getPerson, getPersonSimilarityRankToFace } from "@/lib/immich/people";
 import {
   getPersonAssetIdsInLibrary,
+  getPersonAssetIdsInSharedAlbums,
   getSharedAlbumIds,
 } from "@/lib/immich/shared-album-scope";
 import type { PersonFacePanelRow } from "@/lib/people/person-face-panel-row";
@@ -140,6 +141,42 @@ export async function unlinkFaceFromPerson(faceId: string): Promise<void> {
   });
 }
 
+/** Hard-delete a face record (used before replacing geometry with a new manual face). */
+export async function deleteFaceForce(faceId: string): Promise<void> {
+  await immichJson(`/api/faces/${faceId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ force: true }),
+  });
+}
+
+export type ManualFaceBox = {
+  assetId: string;
+  personId: string;
+  imageWidth: number;
+  imageHeight: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/** Manual face in image pixel space (Immich `POST /api/faces`). */
+export async function createManualFace(dto: ManualFaceBox): Promise<void> {
+  await immichJson("/api/faces", {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+/** Immich has no bbox PATCH: delete old face and create a new manual face for the same person. */
+export async function replaceFaceBoundingBox(
+  params: ManualFaceBox & { faceId: string },
+): Promise<void> {
+  const { faceId, ...dto } = params;
+  await deleteFaceForce(faceId);
+  await createManualFace(dto);
+}
+
 async function assetIdsInAlbums(albumIds: string[]): Promise<string[]> {
   const ids = new Set<string>();
   for (const albumId of albumIds) {
@@ -262,14 +299,21 @@ function sortPersonFaceRowsByAssetThenFaceId(
  */
 export async function listLinkedFacePanelRowsForPerson(
   personId: string,
+  sharedAlbumIds?: string[],
+  opts?: { maxAssets?: number },
 ): Promise<PersonFacePanelRow[]> {
-  const assetIds = await getPersonAssetIdsInLibrary(personId);
+  let assetIds =
+    sharedAlbumIds && sharedAlbumIds.length > 0
+      ? await getPersonAssetIdsInSharedAlbums(personId, sharedAlbumIds)
+      : await getPersonAssetIdsInLibrary(personId);
   if (assetIds.length === 0) return [];
 
-  const facesByAsset = await getFacesForAssets(
-    assetIds,
-    FACE_BATCH_CONCURRENCY,
-  );
+  const cap = opts?.maxAssets;
+  if (cap != null && cap > 0 && assetIds.length > cap) {
+    assetIds = assetIds.slice(0, cap);
+  }
+
+  const facesByAsset = await getFacesForAssets(assetIds, FACE_BATCH_CONCURRENCY);
   const linked: PersonFacePanelRow[] = [];
 
   for (const assetId of assetIds) {

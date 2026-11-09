@@ -8,6 +8,7 @@ import {
 } from "@/lib/assets/compute-context";
 import type { GridAsset } from "@/lib/assets/grid-asset";
 import { tagPath } from "@/lib/immich/tag-policy";
+import { immichCaptureDateKey } from "@/lib/immich/captured-datetime";
 
 export function getGridFieldValue(
   asset: GridAsset,
@@ -40,6 +41,8 @@ export function getGridFieldValue(
       if (Number.isNaN(dt.getTime())) return "";
       return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
     }
+    case "captureDate":
+      return immichCaptureDateKey(asset.localDateTime || asset.fileCreatedAt);
     case "description":
       return asset.description ?? asset.exifInfo?.description ?? "";
     case "exif.city":

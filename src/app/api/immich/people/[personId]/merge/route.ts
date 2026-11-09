@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPerson, mergePeopleIntoTarget, updatePerson } from "@/lib/immich/people";
+import { invalidateSharedPeopleIndex } from "@/lib/immich/shared-people-index";
 
 type Params = { params: Promise<{ personId: string }> };
 
@@ -26,6 +27,7 @@ export async function POST(request: Request, { params }: Params) {
         ? await updatePerson(targetPersonId, payload)
         : await getPerson(targetPersonId);
 
+    invalidateSharedPeopleIndex();
     return NextResponse.json({ person });
   } catch (e) {
     if (e instanceof z.ZodError) {

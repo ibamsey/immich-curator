@@ -91,7 +91,28 @@ export function sortGridAssets(
   return sorted;
 }
 
+function isChronologicalGroupField(fieldId: string): boolean {
+  return (
+    fieldId === "month" ||
+    fieldId === "captureDate" ||
+    fieldId === "localDateTime" ||
+    fieldId === "fileCreatedAt"
+  );
+}
+
 function groupLabel(fieldId: string, key: string): string {
+  if (fieldId === "captureDate" && key) {
+    const parts = key.split("-").map((p) => Number(p));
+    if (parts.length === 3 && parts.every((n) => !Number.isNaN(n))) {
+      const dt = new Date(parts[0]!, parts[1]! - 1, parts[2]!);
+      return dt.toLocaleDateString(undefined, {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+  }
   if (fieldId === "month" && key) {
     const [y, m] = key.split("-");
     if (y && m) {
@@ -115,7 +136,11 @@ export function groupGridAssets(
   ctx: ComputeContext = defaultComputeContext(),
 ): AssetQueryGroup[] {
   const fieldId =
-    groupBy === "month" || groupBy === "localDateTime" ? "month" : groupBy;
+    groupBy === "localDateTime" || groupBy === "captureDate"
+      ? "captureDate"
+      : groupBy === "month"
+        ? "month"
+        : groupBy;
   const buckets = new Map<string, GridAsset[]>();
 
   for (const asset of assets) {
@@ -126,7 +151,13 @@ export function groupGridAssets(
   }
 
   const groups: AssetQueryGroup[] = [...buckets.entries()]
-    .sort(([a], [b]) => compareValues(a, b))
+    .sort(([a], [b]) => {
+      const cmp = compareValues(a, b);
+      if (isChronologicalGroupField(fieldId)) {
+        return sortDirection === "desc" ? -cmp : cmp;
+      }
+      return cmp;
+    })
     .map(([key, list]) => ({
       key,
       label: groupLabel(fieldId, key === "—" ? "" : key),

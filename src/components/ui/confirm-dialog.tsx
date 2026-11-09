@@ -23,6 +23,8 @@ type ConfirmDialogProps = {
   confirmVariant?: "default" | "destructive";
   loading?: boolean;
   onConfirm: () => void;
+  /** Stack above another open dialog (e.g. asset preview modal). */
+  elevated?: boolean;
 };
 
 export function ConfirmDialog({
@@ -36,10 +38,16 @@ export function ConfirmDialog({
   confirmVariant = "default",
   loading = false,
   onConfirm,
+  elevated = false,
 }: ConfirmDialogProps) {
+  const stackClass = elevated ? "z-[100]" : undefined;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={!loading}>
+      <DialogContent
+        showCloseButton={!loading}
+        className={stackClass}
+        overlayClassName={stackClass}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

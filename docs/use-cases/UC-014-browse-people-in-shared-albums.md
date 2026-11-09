@@ -12,29 +12,32 @@
 ## Main flow
 
 1. Ian opens **People** in immich-curator.
-2. App loads persons who appear on at least one asset in the union of operator-shared albums, and splits them into two tabs.
-3. **People** shows each named person: face thumbnail, **display name**, and **date of birth** (`dd/mm/yyyy` with a calendar icon). **Faces** shows unnamed cluster persons the same way, then detections that Immich has not assigned to a person (a crop of that face and a name field).
-4. Ian selects a person; the **RHS context panel** has **Photos** (grid of in-scope assets, thumbnail + description, with the same filter/sort/group toolbar as Explore ([UC-015](./UC-015-filter-sort-group-asset-grids.md))) and **Linked faces** (every face Immich assigns to this person on those assets, with optional unlink). Selecting a detection shows that photo and a name field.
-5. Ian **single-clicks** a photo of a person → below the grid, a **face wheel** shows the catalogue person at the centre and other people from that photo on spokes (scroll to rotate; click a spoke to focus; **PersonIdentityEditor** below for name/DOB). If the photo has only one person, the editor appears without the wheel.
-6. Ian edits name/DOB and saves (catalogue tile or panel editor); curator updates as **target**. A new name moves that person onto **People** and selects them. Clearing the name moves them back to **Faces**.
-7. Ian names a detection from its tile or panel. Curator creates one person for that face, or, when the name matches someone already named, offers to assign the face to that person. The new or surviving person opens on **People**. Other similar detections stay on **Faces**.
-8. Ian **double-clicks** a spoke face → main catalogue selection switches to that person, on the tab that holds them.
-9. Ian **double-clicks** an asset → **Explore** with the asset selected ([UC-004](./UC-004-browse-album-assets-in-curator.md), [UC-003](./UC-003-ian-curate-in-shared-album-immich.md) channel B when the album is shared).
+2. Server builds the catalogue from a **shared people index**: paginated Immich metadata search over all operator-shared `albumIds` with `withPeople: true`, deriving who appears in scope and **photo counts per person** (cached ~5 minutes on the server). No per-person “probe” search per catalogue load.
+3. Main area has **three tabs:**
+   - **People** — one tile per **unique display name** (surname-first sort among named persons); optional badge when someone has **≥2 photos** in shared albums (count from index).
+   - **Faces** — unnamed cluster persons, then **unassigned detections** (lazy-loaded faces list in shared albums).
+   - **Duplicates** — similar **person names** clusters; see [UC-017](./UC-017-reconcile-similar-person-names.md).
+4. Ian selects a person; the **RHS context panel** remembers **Photos** vs **Linked faces** in session storage.
+5. **Photos** tab: grid of assets for `{ personId, shared albumIds }` via `POST /api/immich/assets/query` with `withPeople: true` and an **exact** total from `POST /api/search/statistics`. Toolbar hidden (fixed default sort). Thumbnail **single-click** opens full-screen preview ([UC-019](./UC-019-adjust-faces-in-preview.md)); badges on thumbs show **multi-person** tags when `asset.people.length > 1`. **Double-click** description row → Explore deep link.
+6. Below the grid, selecting a photo shows **AssetFacesSection** (face wheel when multiple people on asset, else **PersonIdentityEditor**).
+7. **Linked faces** tab: on load, **linked faces only** in shared scope (`mode=linked`); rows paginated (“Load more”). **Find similar unassigned faces** runs the heavy library scan (`mode=scan`) on demand. Link / unlink with confirm ([US-003](../user-stories/US-003-people-unlink-face.md)).
+8. Ian edits name/DOB on catalogue tiles or panel editors; saves as **target**. Naming moves records between **People** and **Faces** tabs; merge-if-same-name on detections.
+9. Ian names a detection from **Faces** tab tile or RHS detection panel.
+10. Ian **double-clicks** a spoke face in the wheel → catalogue selection switches to that person on the appropriate tab.
 
 ## Alternate flows
 
 - **No shared albums:** Empty catalogue with explanation; configure share via Albums ([UC-009](./UC-009-album-crud-in-curator.md)).
-- **Unnamed cluster:** Empty name field on the **Faces** tab; Ian assigns a display name as target and the person moves to **People**.
-- **Unidentified detection:** Name field on the **Faces** tab. One face becomes one person. A matching name can merge into the existing person instead.
-- **Open Faces directly:** `/people?tab=faces`. `/people?personId=` opens **People** when that person has a name, otherwise **Faces**.
-- **Clear DOB:** Empty inputs send `birthDate: null` to Immich (not empty string).
-- **Asset outside default Explore album:** Explore resolves a **shared** album that contains the asset (prefer configured default album when it contains the asset).
-- **DOB-only fix without browsing:** Ian may use the same People UI as [UC-008](./UC-008-ian-correct-person-date-of-birth.md).
+- **Open tab directly:** `/people?tab=faces`, `/people?tab=duplicates`, `/people?personId=` (opens **People** or **Faces** depending on whether the person has a display name).
+- **Clear DOB:** Empty inputs send `birthDate: null` to Immich.
+- **Explore handoff:** Double-click asset row → `/explore?assetId=&albumId=` with shared album resolution ([UC-004](./UC-004-browse-album-assets-in-curator.md)).
+- **Face / merge mutations:** Server invalidates shared people index; workspace may `router.refresh()` to refresh photo-count badges.
+- **DOB-only fix:** Same UI as [UC-008](./UC-008-ian-correct-person-date-of-birth.md).
 
 ## Postconditions
 
 - Person `name` and `birthDate` on Geoff’s library match Ian’s saved values.
-- Ian can reach full asset curation from a person’s asset via Explore deep link.
+- Ian can reach full asset curation and preview tooling from a person’s photos.
 
-**Traces to:** [US-001](../user-stories/US-001-geoff-knows-ian-catalogs.md) (narrative step 5)  
-**Informs:** [DES-005](../designs/DES-005-people-catalogue-and-panel.md), [UC-008](./UC-008-ian-correct-person-date-of-birth.md), [UC-004](./UC-004-browse-album-assets-in-curator.md)
+**Traces to:** [US-001](../user-stories/US-001-geoff-knows-ian-catalogs.md), [US-003](../user-stories/US-003-people-unlink-face.md)  
+**Informs:** [DES-005](../designs/DES-005-people-catalogue-and-panel.md), [UC-008](./UC-008-ian-correct-person-date-of-birth.md), [UC-004](./UC-004-browse-album-assets-in-curator.md), [UC-017](./UC-017-reconcile-similar-person-names.md), [UC-015](./UC-015-filter-sort-group-asset-grids.md) (person-scoped query variant)

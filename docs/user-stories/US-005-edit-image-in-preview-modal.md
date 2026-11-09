@@ -22,3 +22,4 @@ As **Ian**, when reviewing a photo in the full-screen preview from Explore or Pe
 ## Notes
 
 - Immich no longer exposes in-place replace; see [IP-2026-11-06-preview-modal-image-editing](../implementation-plans/IP-2026-11-06-preview-modal-image-editing.md).
+- Structured behaviour: [UC-018](../use-cases/UC-018-edit-image-in-preview-modal.md).

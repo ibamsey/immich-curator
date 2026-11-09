@@ -29,6 +29,9 @@ Links to UC/DES/ADR when they exist
 |----|---------|
 | US-001 | Ian scans/uploads; Geoff describes + names faces in Immich; Ian tags/locations/fixes via shared album and sidecar-as-Geoff |
 | US-002 | Ian creates new Geoff albums, moves assets from Poundsgate; shared with Ian; metadata and faces unchanged |
+| [US-003](./US-003-people-unlink-face.md) | Unlink mistaken face assignments in People RHS |
+| [US-004](./US-004-review-duplicate-photos.md) | Review Immich duplicate asset groups on `/duplicates` |
+| [US-005](./US-005-edit-image-in-preview-modal.md) | Crop / rotate / tone in full-screen preview |
 
 Add further stories when new actors or tools appear (e.g. public links, bulk export).
 

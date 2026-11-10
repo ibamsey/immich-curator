@@ -106,7 +106,7 @@ Exact icon set follows shadcn/lucide conventions in implementation; names here a
 **Interaction rules**
 
 - Single selection: panel binds to one entity.
-- Multi-select on Explore / Albums: panel shows count + bulk actions (tags, move) with shared form.
+- Multi-select on Explore: tile + date-group ticks; with 2+ ticks, RHS lists bulk actions from a registry ([DES-008](../DES-008-explore-multi-select-actions.md); first action: tags). Albums: same pattern later.
 - No selection: panel collapsed or shows route help / filter summary.
 - Errors from Immich API surface inline in panel (never expose API key).
 

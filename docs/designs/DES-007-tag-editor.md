@@ -36,9 +36,9 @@ After a successful attach or detach, refetch the asset and render `tags` from th
 
 The browser never receives either API key ([ADR-0001](../adr/0001-server-side-immich-api.md)).
 
-### v2 (same panel, later phase)
+### v2 (multi-select)
 
-When several assets are selected, the panel offers **add one catalog tag** to all of them (`PUT /api/tags/assets` as the target). No bulk detach of provenance tags.
+Implemented on Explore via [DES-008](./DES-008-explore-multi-select-actions.md): bulk add catalog tag; remove tags in common across the ticked set. Provenance tags are not bulk-detached.
 
 ```mermaid
 sequenceDiagram

@@ -55,6 +55,8 @@ async function loadTagForDetach(ref: TagRef): Promise<ImmichTag> {
   return match;
 }
 
+export type TagLinkResults = { tag: ImmichTag; results: BulkIdResponse[] };
+
 function assertLinkResult(
   results: BulkIdResponse[] | undefined,
   assetId: string,
@@ -67,20 +69,35 @@ function assertLinkResult(
   throw new ImmichApiError(row.error || "Tag update failed", 400);
 }
 
+function failuresFromResults(
+  results: BulkIdResponse[] | undefined,
+  allowDuplicate: boolean,
+): BulkIdResponse[] {
+  if (!Array.isArray(results)) return [];
+  return results.filter(
+    (row) =>
+      row.success === false &&
+      !(allowDuplicate && row.error === "duplicate"),
+  );
+}
+
 async function linkTag(
   method: "PUT" | "DELETE",
   tagId: string,
-  assetId: string,
+  assetIds: string[],
   allowDuplicate: boolean,
-) {
+): Promise<BulkIdResponse[]> {
   const results = await immichJsonTarget<BulkIdResponse[]>(
     `/api/tags/${tagId}/assets`,
     {
       method,
-      body: JSON.stringify({ ids: [assetId] }),
+      body: JSON.stringify({ ids: assetIds }),
     },
   );
-  assertLinkResult(results, assetId, allowDuplicate);
+  if (assetIds.length === 1) {
+    assertLinkResult(results, assetIds[0]!, allowDuplicate);
+  }
+  return results ?? [];
 }
 
 export async function attachTagToAsset(
@@ -88,7 +105,7 @@ export async function attachTagToAsset(
   ref: TagRef,
 ): Promise<ImmichAssetWithEnrichment> {
   const tag = await resolveTag(ref);
-  await linkTag("PUT", tag.id, assetId, true);
+  await linkTag("PUT", tag.id, [assetId], true);
   return getAsset(assetId);
 }
 
@@ -100,6 +117,47 @@ export async function detachTagFromAsset(
   if (isProvenanceTag(tagPath(tag))) {
     throw new ImmichApiError("Provenance tags cannot be removed", 400);
   }
-  await linkTag("DELETE", tag.id, assetId, false);
+  await linkTag("DELETE", tag.id, [assetId], false);
   return getAsset(assetId);
+}
+
+export async function attachTagToAssets(
+  assetIds: string[],
+  ref: TagRef,
+): Promise<TagLinkResults> {
+  if (assetIds.length === 0) {
+    throw new ImmichApiError("No assets selected", 400);
+  }
+  const tag = await resolveTag(ref);
+  const results = await linkTag("PUT", tag.id, assetIds, true);
+  const failures = failuresFromResults(results, true);
+  if (failures.length > 0 && failures.length === assetIds.length) {
+    throw new ImmichApiError(
+      failures[0]?.error || "Tag attach failed",
+      400,
+    );
+  }
+  return { tag, results };
+}
+
+export async function detachTagFromAssets(
+  assetIds: string[],
+  ref: TagRef,
+): Promise<TagLinkResults> {
+  if (assetIds.length === 0) {
+    throw new ImmichApiError("No assets selected", 400);
+  }
+  const tag = await loadTagForDetach(ref);
+  if (isProvenanceTag(tagPath(tag))) {
+    throw new ImmichApiError("Provenance tags cannot be removed", 400);
+  }
+  const results = await linkTag("DELETE", tag.id, assetIds, false);
+  const failures = failuresFromResults(results, false);
+  if (failures.length > 0 && failures.length === assetIds.length) {
+    throw new ImmichApiError(
+      failures[0]?.error || "Tag detach failed",
+      400,
+    );
+  }
+  return { tag, results };
 }

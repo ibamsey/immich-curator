@@ -15,6 +15,25 @@ export function displayRectIsUsable(rect: DisplayRect): boolean {
   return rect.width >= MIN_DISPLAY_PX && rect.height >= MIN_DISPLAY_PX;
 }
 
+/**
+ * Map viewport coordinates to layout-local pixels when the editor root is
+ * visually scaled (e.g. CSS transform on an ancestor). `layoutW`/`layoutH` are
+ * the coordinate system used for `rect` and handles; `bounds` is from
+ * getBoundingClientRect() (post-transform painted size).
+ */
+export function clientPointToLayoutLocal(
+  clientX: number,
+  clientY: number,
+  bounds: DOMRect,
+  layoutW: number,
+  layoutH: number,
+): { lx: number; ly: number } | null {
+  if (bounds.width <= 0 || bounds.height <= 0) return null;
+  const lx = (clientX - bounds.left) * (layoutW / bounds.width);
+  const ly = (clientY - bounds.top) * (layoutH / bounds.height);
+  return { lx, ly };
+}
+
 type HandleId =
   | "move"
   | "n"
@@ -124,14 +143,20 @@ export function DisplayRectEditor({
     dispAtStart: DisplayRect;
   } | null>(null);
 
-  const localFromClient = useCallback((clientX: number, clientY: number) => {
-    const root = rootRef.current;
-    if (!root) return null;
-    const bounds = root.getBoundingClientRect();
-    const lx = clientX - bounds.left;
-    const ly = clientY - bounds.top;
-    return { lx, ly };
-  }, []);
+  const localFromClient = useCallback(
+    (clientX: number, clientY: number) => {
+      const root = rootRef.current;
+      if (!root) return null;
+      return clientPointToLayoutLocal(
+        clientX,
+        clientY,
+        root.getBoundingClientRect(),
+        layoutW,
+        layoutH,
+      );
+    },
+    [layoutW, layoutH],
+  );
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!active || e.button !== 0) return;

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { hitHandle } from "@/components/people/display-rect-editor";
+import {
+  clientPointToLayoutLocal,
+  hitHandle,
+} from "@/components/people/display-rect-editor";
 
 describe("hitHandle", () => {
   const rect = { x: 100, y: 80, width: 120, height: 100 };
@@ -20,5 +23,18 @@ describe("hitHandle", () => {
 
   it("returns null outside the box slop region", () => {
     expect(hitHandle(10, 10, rect)).toBeNull();
+  });
+});
+
+describe("clientPointToLayoutLocal", () => {
+  it("maps through CSS scale on the painted box", () => {
+    const bounds = {
+      left: 50,
+      top: 40,
+      width: 400,
+      height: 300,
+    } as DOMRect;
+    const local = clientPointToLayoutLocal(250, 190, bounds, 200, 150);
+    expect(local).toEqual({ lx: 100, ly: 75 });
   });
 });

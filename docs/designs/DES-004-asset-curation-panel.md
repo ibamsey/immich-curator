@@ -10,10 +10,13 @@
 - **Operator** credentials: album **activity comments** (create/delete own only).
 - No native `alert` / `confirm` ([ADR-0003](../adr/0003-tech-stack-and-engineering-practices.md)).
 
+## Multi-select (Explore)
+
+When two or more grid tiles are ticked, Explore replaces this panel with the bulk action shell ([DES-008](./DES-008-explore-multi-select-actions.md)). Single-tile click + one tick still uses this panel.
+
 ## Non-goals (v1)
 
 - UC-011 remove-from-album (disabled stub or label only).
-- Tag/location editors (UC-005/006).
 - Edit or delete other users’ comments.
 
 ## Panel sections

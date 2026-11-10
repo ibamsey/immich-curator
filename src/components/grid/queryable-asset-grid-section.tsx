@@ -20,6 +20,8 @@ import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
 import type { GridQuery, GridQueryScope } from "@/lib/assets/grid-query-types";
 import type { PersonAssetLinkedFaceHint } from "@/lib/people/person-asset-linked-faces";
 import { peopleCountHintsFromAssets } from "@/lib/people/person-asset-people-hints";
+import type { GridAsset } from "@/lib/assets/grid-asset";
+
 type QueryableAssetGridSectionProps = {
   scope: GridQueryScope;
   storageKey: string | null;
@@ -43,11 +45,18 @@ type QueryableAssetGridSectionProps = {
   /** When grid preview is open, sync metadata saves (e.g. modal description) to parent detail state. */
   onPreviewAssetUpdated?: (asset: ImmichAssetWithEnrichment) => void;
   personLinkedFacesByAsset?: Record<string, PersonAssetLinkedFaceHint>;
+  multiSelectedIds?: ReadonlySet<string>;
+  selectionMode?: boolean;
+  onToggleMultiSelect?: (assetId: string) => void;
+  onToggleGroupSelect?: (assetIds: string[]) => void;
+  onVisibleAssetIdsChange?: (ids: string[]) => void;
+  onGridAssetsChange?: (assets: GridAsset[]) => void;
 };
 
 export type QueryableAssetGridSectionHandle = {
   removeAsset: (assetId: string) => void;
   refetch: () => void;
+  getAssets: () => GridAsset[];
 };
 
 export const QueryableAssetGridSection = forwardRef<
@@ -68,6 +77,12 @@ export const QueryableAssetGridSection = forwardRef<
   defaultQuery,
   onPreviewAssetUpdated,
   personLinkedFacesByAsset,
+  multiSelectedIds,
+  selectionMode,
+  onToggleMultiSelect,
+  onToggleGroupSelect,
+  onVisibleAssetIdsChange,
+  onGridAssetsChange,
 }, ref) {
   const scanDefaultDpi = useScanDefaultDpi();
   const [gridPreviewOpen, setGridPreviewOpen] = useState(false);
@@ -101,10 +116,15 @@ export const QueryableAssetGridSection = forwardRef<
     [removeAsset, refetch],
   );
 
-  useImperativeHandle(ref, () => ({ removeAsset, refetch }), [
-    removeAsset,
-    refetch,
-  ]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      removeAsset,
+      refetch,
+      getAssets: () => assets,
+    }),
+  [removeAsset, refetch, assets],
+  );
 
   const peopleHints = useMemo(() => {
     if (personLinkedFacesByAsset) return personLinkedFacesByAsset;
@@ -124,6 +144,11 @@ export const QueryableAssetGridSection = forwardRef<
       onSelectionLost?.();
     }
   }, [assets, selectedId, loading, onSelectionLost]);
+
+  useEffect(() => {
+    onVisibleAssetIdsChange?.(assets.map((a) => a.id));
+    onGridAssetsChange?.(assets);
+  }, [assets, onVisibleAssetIdsChange, onGridAssetsChange]);
 
   return (
     <div className="flex min-h-0 flex-col">
@@ -160,6 +185,10 @@ export const QueryableAssetGridSection = forwardRef<
           }
           scanDefaultDpi={scanDefaultDpi}
           personLinkedFacesByAsset={peopleHints}
+          multiSelectedIds={multiSelectedIds}
+          selectionMode={selectionMode}
+          onToggleMultiSelect={onToggleMultiSelect}
+          onToggleGroupSelect={onToggleGroupSelect}
         />
       )}
       {openGridPreview ? (

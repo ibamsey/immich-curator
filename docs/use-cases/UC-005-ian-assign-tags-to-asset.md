@@ -24,7 +24,7 @@ Installation rules: [`/home/ian/immich/docs/tags.md`](/home/ian/immich/docs/tags
 - **Immich UI:** The target (or an invitee whose role allows it) adds tags in Immich ([UC-003](./UC-003-ian-curate-in-shared-album-immich.md)). Tags created in the curator still belong to the target.
 - **Provenance:** Values under `import/` or `{immich-go}/` stay on the asset. The curator does not offer removal for those prefixes.
 - **Already present:** Choosing a `value` the target already has attaches the existing id. It does not create a second tag.
-- **Selection (later):** One catalog tag is attached to every selected asset with `PUT /api/tags/assets` as the target. Provenance tags are not bulk-detached.
+- **Multi-select (Explore):** The operator ticks two or more assets on the Explore grid ([DES-008](../designs/DES-008-explore-multi-select-actions.md)). The bulk tag action adds one catalog path to all ticked assets via `PUT /api/immich/tags/assets` (target key). Removing a tag in common detaches from all ticked assets; provenance tags are not bulk-detached.
 - **Find by tag:** In Immich, filter by a tag id. A parent matches assets tagged only on a descendant. Curator server-side `filter.tagIds` is out of scope here.
 
 ## Postconditions

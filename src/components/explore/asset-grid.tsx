@@ -17,6 +17,7 @@ import {
   objectCoverFaceBox,
   type FaceBoxPercent,
 } from "@/lib/people/face-box-layout";
+import { SelectionTickButton } from "@/components/grid/selection-tick-button";
 
 type PreviewAssetPick = Pick<ImmichAsset, "id" | "originalFileName" | "type">;
 
@@ -26,6 +27,9 @@ type AssetGridProps = {
   onSelect: (assetId: string) => void;
   /** Optional: open full-image zoom from grid (e.g. special flows); Explore uses RHS preview instead. */
   onPreviewOpen?: (asset: PreviewAssetPick) => void;
+  multiSelectedIds?: ReadonlySet<string>;
+  selectionMode?: boolean;
+  onToggleMultiSelect?: (assetId: string) => void;
 };
 
 type PlacedFaceBox = {
@@ -244,7 +248,11 @@ export function AssetGrid({
   selectedId,
   onSelect,
   onPreviewOpen,
+  multiSelectedIds,
+  selectionMode = false,
+  onToggleMultiSelect,
 }: AssetGridProps) {
+  const multiSelectEnabled = Boolean(onToggleMultiSelect && multiSelectedIds);
   if (assets.length === 0) {
     return (
       <p className="p-8 text-center text-sm text-muted-foreground">
@@ -259,7 +267,9 @@ export function AssetGrid({
       role="list"
     >
       {assets.map((asset) => {
-        const selected = asset.id === selectedId;
+        const focused = asset.id === selectedId;
+        const ticked =
+          multiSelectEnabled && multiSelectedIds!.has(asset.id);
         return (
           <div
             key={asset.id}
@@ -279,9 +289,31 @@ export function AssetGrid({
             }}
             className={cn(
               "group relative aspect-square cursor-pointer overflow-hidden rounded-sm bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+              focused &&
+                "ring-2 ring-primary ring-offset-2 ring-offset-background",
+              ticked && !focused && "ring-2 ring-primary/80 ring-offset-2 ring-offset-background",
             )}
           >
+            {multiSelectEnabled ? (
+              <SelectionTickButton
+                className={cn(
+                  "absolute left-1.5 top-1.5 z-10",
+                  selectionMode
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100",
+                  ticked && "opacity-100",
+                )}
+                selected={ticked}
+                ariaLabel={`Select ${asset.originalFileName}`}
+                onToggle={() => onToggleMultiSelect!(asset.id)}
+              />
+            ) : null}
+            {ticked ? (
+              <div
+                className="pointer-events-none absolute inset-0 z-[1] bg-primary/15"
+                aria-hidden
+              />
+            ) : null}
             <div className="absolute inset-0 transition-transform group-hover:scale-[1.02]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img

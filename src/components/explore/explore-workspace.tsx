@@ -10,9 +10,12 @@ import {
   AssetCurationPanel,
   type CurationPanelConfig,
 } from "@/components/explore/asset-curation-panel";
+import { ExploreSelectionHeader } from "@/components/explore/explore-selection-header";
+import { MultiAssetActionsPanel } from "@/components/explore/multi-asset-actions-panel";
 import type { ShellContext } from "@/lib/server/shell-context";
+import { useAssetSelection } from "@/lib/assets/use-asset-selection";
 import { useScanDefaultDpi } from "@/components/grid/use-scan-default-dpi";
-import { normalizeAssetDetail } from "@/lib/assets/grid-asset";
+import { normalizeAssetDetail, type GridAsset } from "@/lib/assets/grid-asset";
 import { EXPLORE_GRID_QUERY } from "@/lib/assets/grid-query-types";
 import type { ImmichAlbum, ImmichAssetWithEnrichment } from "@/lib/immich/types";
 import {
@@ -46,6 +49,20 @@ export function ExploreWorkspace({
   const [fullPreviewAsset, setFullPreviewAsset] =
     useState<AssetPreviewTarget | null>(null);
   const gridRef = useRef<QueryableAssetGridSectionHandle>(null);
+  const [gridAssets, setGridAssets] = useState<GridAsset[]>([]);
+
+  const {
+    selectedIds,
+    size: multiSelectSize,
+    idList: multiSelectIds,
+    toggle: toggleMultiSelect,
+    toggleMany: toggleGroupSelect,
+    clear: clearMultiSelect,
+    prune,
+    selectionMode,
+  } = useAssetSelection();
+
+  const multiSelectActive = multiSelectSize >= 2;
 
   const onSelect = useCallback((assetId: string) => {
     setSelectedId(assetId);
@@ -73,6 +90,22 @@ export function ExploreWorkspace({
     onSelect(initialSelectedAssetId);
   }, [initialSelectedAssetId, onSelect]);
 
+  const onToggleMultiSelect = useCallback(
+    (id: string) => {
+      toggleMultiSelect(id);
+      setPanelOpen(true);
+    },
+    [toggleMultiSelect],
+  );
+
+  const onToggleGroupSelect = useCallback(
+    (ids: string[]) => {
+      toggleGroupSelect(ids);
+      setPanelOpen(true);
+    },
+    [toggleGroupSelect],
+  );
+
   const onAssetUpdated = useCallback((updated: ImmichAssetWithEnrichment) => {
     setDetail(updated);
   }, []);
@@ -85,7 +118,8 @@ export function ExploreWorkspace({
     setPanelOpen(false);
     setFullPreviewOpen(false);
     setFullPreviewAsset(null);
-  }, []);
+    clearMultiSelect();
+  }, [clearMultiSelect]);
 
   const openFullPreview = useCallback(() => {
     if (!detail) return;
@@ -112,19 +146,64 @@ export function ExploreWorkspace({
     [],
   );
 
-  const panelContent = selectedId ? (
-    <AssetCurationPanel
-      assetId={selectedId}
-      albumId={album.id}
-      asset={detail}
-      loading={loadingDetail}
-      operatorUserId={curationConfig.operatorUserId}
-      operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
-      onAssetUpdated={onAssetUpdated}
-      onAssetDeleted={onAssetDeleted}
-      defaultScanDpi={scanDefaultDpi}
-      onOpenFullPreview={openFullPreview}
+  const handlePruneSelection = useCallback(
+    (ids: string[]) => {
+      prune(ids);
+    },
+    [prune],
+  );
+
+  const handleBulkRefresh = useCallback(() => {
+    gridRef.current?.refetch();
+    if (selectedId) {
+      fetch(`/api/immich/assets/${selectedId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: ImmichAssetWithEnrichment | null) => {
+          if (data) {
+            setDetail(
+              normalizeAssetDetail(data as unknown as Record<string, unknown>),
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }, [selectedId]);
+
+  const panelContent = multiSelectActive ? (
+    <MultiAssetActionsPanel
+      assetIds={multiSelectIds}
+      assets={gridAssets}
+      onClear={clearMultiSelect}
+      onRefresh={handleBulkRefresh}
     />
+  ) : selectedId ? (
+    <div className="p-4">
+      {multiSelectSize === 1 ? (
+        <ExploreSelectionHeader
+          count={1}
+          onClear={clearMultiSelect}
+        />
+      ) : null}
+      <AssetCurationPanel
+        assetId={selectedId}
+        albumId={album.id}
+        asset={detail}
+        loading={loadingDetail}
+        operatorUserId={curationConfig.operatorUserId}
+        operatorCommentsEnabled={curationConfig.operatorCommentsEnabled}
+        onAssetUpdated={onAssetUpdated}
+        onAssetDeleted={onAssetDeleted}
+        defaultScanDpi={scanDefaultDpi}
+        onOpenFullPreview={openFullPreview}
+      />
+    </div>
+  ) : multiSelectSize === 1 ? (
+    <div className="p-4">
+      <ExploreSelectionHeader count={1} onClear={clearMultiSelect} />
+      <p className="text-sm text-muted-foreground">
+        Click a photo to open its details, or tick another to run bulk actions.
+      </p>
+    </div>
   ) : null;
 
   return (
@@ -135,7 +214,7 @@ export function ExploreWorkspace({
       headerSubtitle={
         photoTotal != null ? `${photoTotal} photos` : "Photos"
       }
-      panelTitle="Photo details"
+      panelTitle={multiSelectActive ? "Bulk actions" : "Photo details"}
       panelOpen={panelOpen}
       onPanelOpenChange={setPanelOpen}
       panelContent={panelContent}
@@ -156,6 +235,12 @@ export function ExploreWorkspace({
         }}
         layout="thumb"
         onTotalChange={setPhotoTotal}
+        multiSelectedIds={selectedIds}
+        selectionMode={selectionMode}
+        onToggleMultiSelect={onToggleMultiSelect}
+        onToggleGroupSelect={onToggleGroupSelect}
+        onVisibleAssetIdsChange={handlePruneSelection}
+        onGridAssetsChange={setGridAssets}
       />
       <AssetPreviewModal
         key={fullPreviewAsset?.id ?? "closed"}

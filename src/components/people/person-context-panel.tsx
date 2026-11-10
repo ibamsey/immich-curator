@@ -7,6 +7,7 @@ import { PersonLinkedFacesSection } from "@/components/people/person-linked-face
 import type { ImmichPerson } from "@/lib/immich/types";
 import type { UnassignedFace } from "@/lib/people/unassigned-face";
 import type { PersonRhsPanelView } from "@/lib/people/person-rhs-panel";
+import type { LinkedFacePeek } from "@/lib/people/linked-face-peek";
 import { cn } from "@/lib/utils";
 
 type PersonContextPanelProps = {
@@ -22,6 +23,13 @@ type PersonContextPanelProps = {
   onFaceUnlinkedFromPerson?: (face: UnassignedFace) => void;
   onFaceLinkedFromPerson?: (face: UnassignedFace) => void;
   cataloguePeople?: ImmichPerson[];
+  linkedFacePeekId?: string | null;
+  onLinkedFaceHover?: (target: LinkedFacePeek | null) => void;
+  onLinkedFaceClickEdit?: (
+    assetId: string,
+    faceId: string,
+    face: UnassignedFace,
+  ) => void;
 };
 
 function PersonContextPanelBody({
@@ -36,6 +44,9 @@ function PersonContextPanelBody({
   onFaceUnlinkedFromPerson,
   onFaceLinkedFromPerson,
   cataloguePeople = [],
+  linkedFacePeekId = null,
+  onLinkedFaceHover,
+  onLinkedFaceClickEdit,
 }: Omit<PersonContextPanelProps, "person"> & {
   person: ImmichPerson;
 }) {
@@ -119,6 +130,9 @@ function PersonContextPanelBody({
             onPersonUpdated={onPersonUpdated}
             onFaceUnlinked={onFaceUnlinkedFromPerson}
             onFaceLinked={onFaceLinkedFromPerson}
+            activePeekFaceId={linkedFacePeekId}
+            onFaceHover={onLinkedFaceHover}
+            onFaceClickEdit={onLinkedFaceClickEdit}
           />
         )}
       </div>
@@ -138,6 +152,9 @@ export function PersonContextPanel({
   onFaceLinkedFromPerson,
   sharedAlbumIds,
   cataloguePeople,
+  linkedFacePeekId,
+  onLinkedFaceHover,
+  onLinkedFaceClickEdit,
 }: PersonContextPanelProps) {
   if (!person) {
     return (
@@ -161,6 +178,9 @@ export function PersonContextPanel({
       onFaceUnlinkedFromPerson={onFaceUnlinkedFromPerson}
       onFaceLinkedFromPerson={onFaceLinkedFromPerson}
       cataloguePeople={cataloguePeople}
+      linkedFacePeekId={linkedFacePeekId}
+      onLinkedFaceHover={onLinkedFaceHover}
+      onLinkedFaceClickEdit={onLinkedFaceClickEdit}
     />
   );
 }

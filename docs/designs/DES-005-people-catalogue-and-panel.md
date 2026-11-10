@@ -77,6 +77,12 @@ sequenceDiagram
 - Navigate to `/explore?assetId={id}&albumId={resolved}`.
 - `resolveExploreForAsset` picks shared album containing asset (prefer default album when valid).
 
+## Linked faces fast browse (center peek + click-to-edit)
+
+When the **Linked faces** list renders (or grows via “Find similar unassigned faces” / **Load more**), the client preloads each visible row’s original image ([`preload-asset-originals.ts`](../../src/lib/people/preload-asset-originals.ts), capped concurrency) and warms face overlays via [`load-asset-faces.ts`](../../src/lib/people/load-asset-faces.ts).
+
+**Hover** a list row: an embedded [`AssetPreviewModal`](../../src/components/grid/asset-preview-modal.tsx) appears in the **main canvas only** (not over the RHS panel) with zoom/pan, face labels, and the row’s face highlighted (`highlightFaceId`). The peek **auto-frames** the row face (centered, consistent on-screen size); **Shift + mouse wheel** (anywhere while the peek is open) adjusts a **session zoom** reused when hovering other rows; normal wheel scroll still moves the linked-face list. Moving the pointer to another row updates the center image. **Click** a row (outside link/unlink buttons) to open the full-screen dialog with Edit/Crop/Add face available. Peek mode uses `editingLocked` until **Enable editing** in the dialog; embedded peek always stays browse-only.
+
 ## Face wheel (panel, selected photo)
 
 After **single-click** on an asset, `GET /api/immich/assets/{id}` supplies `people[]`.
@@ -101,7 +107,7 @@ After **single-click** on an asset, `GET /api/immich/assets/{id}` supplies `peop
 | `detection-name-field.tsx` | Name a detection; merge check before create |
 | `detection-context-panel.tsx` | One photo and a name field |
 | `person-context-panel.tsx` | Panel tabs (photos / linked faces) + asset selection |
-| `person-linked-faces-section.tsx` | Linked face grid; DELETE unlink via confirm |
+| `person-linked-faces-section.tsx` | Linked face list; DELETE unlink via confirm; preloads originals + face cache for visible rows; thumbnail opens `AssetPreviewModal` with row face highlighted, prev/next through visible rows (`editingLocked` until **Enable editing**) |
 | `person-asset-grid.tsx` | Single-click select; double-click → Explore |
 | `asset-faces-section.tsx` | Fetch asset people; wheel vs sole editor |
 | `face-wheel-svg.tsx` | Hub-and-spoke SVG widget |

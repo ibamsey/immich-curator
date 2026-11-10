@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { Link2OffIcon, PencilIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PersonNameAssignField } from "@/components/people/person-name-assign-field";
 import { cn } from "@/lib/utils";
 import type { ImmichPerson } from "@/lib/immich/types";
 
@@ -44,6 +45,16 @@ type FaceNameBoxProps = {
   stackFront?: boolean;
   /** Linked face rectangle selection toggled by click. */
   onSelectedChange?: (selected: boolean) => void;
+  /** Image zoom scale on an ancestor; inversely scales name chip and tools. */
+  imageZoomScale?: number;
+  /** Modal face rectangle stroke (with {@link screenConstantFaceOutlineStyle}). */
+  faceOutlineEmphasis?: FaceOutlineEmphasis;
+  /** Asset id for merge UI when naming an unlinked face in the modal. */
+  assetId?: string;
+  /** Shared-album catalogue for similar-name merge checks. */
+  cataloguePeople?: ImmichPerson[];
+  /** Parent-owned editing face id; when it changes away from this face, exit edit. */
+  syncEditingFaceId?: string | null;
   /** Optional face-rectangle adjust (preview modal). */
   rectangleAdjust?: {
     enabled: boolean;
@@ -79,6 +90,80 @@ function hitSlopClass(style?: CSSProperties): string {
   return "-mb-4 pb-4";
 }
 
+/** Keep label chrome at constant screen size when an ancestor scales the image. */
+function labelChromeInverseZoomStyle(
+  imageZoom: number,
+  style?: CSSProperties,
+): CSSProperties | undefined {
+  if (imageZoom <= 0 || Math.abs(imageZoom - 1) < 0.0001) return undefined;
+  const inv = 1 / imageZoom;
+  const top = typeof style?.top === "string" ? parseFloat(style.top) : 0;
+  const left = typeof style?.left === "string" ? parseFloat(style.left) : 0;
+  const originY = top >= 20 ? "100%" : "0%";
+  const originX = left > 50 ? "100%" : "0%";
+  return {
+    transform: `scale(${inv})`,
+    transformOrigin: `${originX} ${originY}`,
+  };
+}
+
+function penInverseZoomStyle(imageZoom: number): CSSProperties | undefined {
+  if (imageZoom <= 0 || Math.abs(imageZoom - 1) < 0.0001) return undefined;
+  return {
+    transform: `scale(${1 / imageZoom})`,
+    transformOrigin: "0% 100%",
+  };
+}
+
+export type FaceOutlineEmphasis = "primary" | "subtle";
+
+/** Face bounds still scale with the image; stroke width stays ~constant on screen. */
+export function screenConstantFaceOutlineStyle(
+  imageZoom: number,
+  emphasis: FaceOutlineEmphasis,
+  opts: {
+    suppressOutline: boolean;
+    selected: boolean;
+    editing: boolean;
+    isLinked: boolean;
+  },
+): CSSProperties {
+  if (opts.suppressOutline) {
+    return {
+      borderColor: "transparent",
+      borderWidth: 0,
+      boxShadow: "none",
+    };
+  }
+  const z = imageZoom > 0 ? imageZoom : 1;
+  const borderW = (emphasis === "primary" ? 2 : 1) / z;
+  const style: CSSProperties = {
+    boxSizing: "border-box",
+    borderStyle: "solid",
+    borderWidth: borderW,
+    borderColor:
+      emphasis === "primary"
+        ? "hsl(var(--primary))"
+        : "rgba(255,255,255,0.45)",
+  };
+  const shadows: string[] = [];
+  if (emphasis === "primary") {
+    shadows.push(`0 0 0 ${1 / z}px rgba(0,0,0,0.85)`);
+  }
+  if (opts.isLinked && opts.selected && !opts.editing) {
+    const ringW = 2 / z;
+    const gap = 1 / z;
+    shadows.push(`0 0 0 ${ringW}px hsl(var(--primary))`);
+    shadows.push(
+      `0 0 0 ${ringW + gap}px hsl(var(--background) / 0.8)`,
+    );
+  }
+  if (shadows.length > 0) {
+    style.boxShadow = shadows.join(", ");
+  }
+  return style;
+}
+
 export function FaceNameBox({
   faceId,
   personId,
@@ -98,6 +183,11 @@ export function FaceNameBox({
   suppressOutline = false,
   stackFront = false,
   onSelectedChange,
+  imageZoomScale = 1,
+  faceOutlineEmphasis = "subtle",
+  assetId,
+  cataloguePeople = [],
+  syncEditingFaceId,
   rectangleAdjust,
 }: FaceNameBoxProps) {
   const router = useRouter();
@@ -131,6 +221,16 @@ export function FaceNameBox({
   const placement = chipPlacement(style);
   const hitSlop = hitSlopClass(style);
   const isLinked = Boolean(personId);
+  const chipZoomStyle = labelChromeInverseZoomStyle(imageZoomScale, style);
+  const penZoomStyle = penInverseZoomStyle(imageZoomScale);
+  const accurateOutlineStyle = accurateFaceOutline
+    ? screenConstantFaceOutlineStyle(imageZoomScale, faceOutlineEmphasis, {
+        suppressOutline,
+        selected,
+        editing,
+        isLinked,
+      })
+    : undefined;
 
   const setEditingState = (next: boolean) => {
     editingRef.current = next;
@@ -206,6 +306,14 @@ export function FaceNameBox({
     }
   };
 
+  useEffect(() => {
+    if (!editing || syncEditingFaceId === undefined) return;
+    if (syncEditingFaceId !== faceId) {
+      cancel();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancel is stable for this face session
+  }, [syncEditingFaceId, faceId, editing]);
+
   const save = async () => {
     if (saving) return;
     const trimmed = draft.trim();
@@ -272,6 +380,7 @@ export function FaceNameBox({
         variant="secondary"
         disabled={rectangleAdjust.disabled}
         className="pointer-events-auto absolute bottom-0 left-0 z-[70] size-7 -translate-x-1/4 translate-y-1/4 shadow-md"
+        style={penZoomStyle}
         title={
           rectangleAdjust.disabled
             ? "Finish the current action before adjusting face boxes"
@@ -378,10 +487,8 @@ export function FaceNameBox({
       >
         {accurateFaceOutline ? (
           <div
-            className={cn(
-              "pointer-events-none absolute inset-0 z-0",
-              outlineClass,
-            )}
+            className="pointer-events-none absolute inset-0 z-0 transition-colors duration-150"
+            style={accurateOutlineStyle}
             aria-hidden
           />
         ) : null}
@@ -427,56 +534,78 @@ export function FaceNameBox({
               chipClass,
               "flex items-center gap-0.5 pointer-events-auto",
             )}
+            style={chipZoomStyle}
           >
             {unlinkButton}
-            <input
-              ref={inputRef}
-              autoFocus
-              value={draft}
-              disabled={saving}
-              aria-label={`Edit name for ${label}`}
-              title={error ?? "Enter to save, Esc to cancel"}
-              style={{ width: fieldWidth(draft || label) }}
-              className={cn(
-                "min-w-0 max-w-[min(14rem,56vw)] flex-1 rounded-sm border px-1 py-0 text-[10px] font-medium leading-tight outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                error ? "border-destructive" : "border-input bg-background",
-              )}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              onDoubleClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                setError(null);
-              }}
-              onFocus={(e) => {
-                if (blurSaveTimer.current != null) {
-                  window.clearTimeout(blurSaveTimer.current);
-                  blurSaveTimer.current = null;
-                }
-                e.currentTarget.select();
-              }}
-              onBlur={() => {
-                if (!editingRef.current) return;
-                if (blurSaveTimer.current != null) {
-                  window.clearTimeout(blurSaveTimer.current);
-                }
-                blurSaveTimer.current = window.setTimeout(() => {
-                  blurSaveTimer.current = null;
+            {isLinked ? (
+              <input
+                ref={inputRef}
+                autoFocus
+                value={draft}
+                disabled={saving}
+                aria-label={`Edit name for ${label}`}
+                title={error ?? "Enter to save, Esc to cancel"}
+                style={{ width: fieldWidth(draft || label) }}
+                className={cn(
+                  "min-w-0 max-w-[min(14rem,56vw)] flex-1 rounded-sm border px-1 py-0 text-[10px] font-medium leading-tight outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  error ? "border-destructive" : "border-input bg-background",
+                )}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setError(null);
+                }}
+                onFocus={(e) => {
+                  if (blurSaveTimer.current != null) {
+                    window.clearTimeout(blurSaveTimer.current);
+                    blurSaveTimer.current = null;
+                  }
+                  e.currentTarget.select();
+                }}
+                onBlur={() => {
                   if (!editingRef.current) return;
-                  void save();
-                }, 0);
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void save();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancel();
-                }
-              }}
-            />
+                  if (blurSaveTimer.current != null) {
+                    window.clearTimeout(blurSaveTimer.current);
+                  }
+                  blurSaveTimer.current = window.setTimeout(() => {
+                    blurSaveTimer.current = null;
+                    if (!editingRef.current) return;
+                    void save();
+                  }, 0);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void save();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancel();
+                  }
+                }}
+              />
+            ) : (
+              <PersonNameAssignField
+                faceId={faceId}
+                assetId={assetId}
+                cataloguePeople={cataloguePeople}
+                compact
+                inputRef={inputRef}
+                disabled={saving}
+                error={error}
+                onError={setError}
+                onCancel={cancel}
+                inputStyle={{ width: fieldWidth(draft || label || "Name") }}
+                className="max-w-[min(14rem,56vw)]"
+                onAssigned={(person) => {
+                  onSaved(faceId, person);
+                  setEditingState(false);
+                  setError(null);
+                }}
+              />
+            )}
           </div>
         ) : showChipContents ? (
           <div
@@ -484,6 +613,7 @@ export function FaceNameBox({
               chipClass,
               "flex items-center gap-0.5 pointer-events-auto",
             )}
+            style={chipZoomStyle}
           >
             {unlinkButton}
             <button

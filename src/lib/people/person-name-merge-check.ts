@@ -3,6 +3,8 @@ import {
   findPersonWithSimilarName,
 } from "@/lib/people/person-name-search";
 import type { ImmichPerson } from "@/lib/immich/types";
+import { parsePeopleSearchResponse } from "@/lib/people/parse-people-search";
+
 export type PersonMergeSuggestionRequest = {
   newName: string;
   editingPerson: ImmichPerson;
@@ -11,15 +13,6 @@ export type PersonMergeSuggestionRequest = {
   /** Shown for the face being named when it has no person thumbnail. */
   editingImageUrl?: string;
 };
-
-function parseSearchPeople(data: unknown): ImmichPerson[] {
-  if (Array.isArray(data)) return data as ImmichPerson[];
-  if (data && typeof data === "object" && "people" in data) {
-    const people = (data as { people?: unknown }).people;
-    if (Array.isArray(people)) return people as ImmichPerson[];
-  }
-  return [];
-}
 
 export async function fetchMergeSuggestionIfNeeded(
   person: ImmichPerson,
@@ -42,7 +35,7 @@ export async function fetchMergeSuggestionIfNeeded(
     throw new Error(message);
   }
 
-  const searchPool = parseSearchPeople(data);
+  const searchPool = parsePeopleSearchResponse(data);
   const pool = [...searchPool, ...cataloguePeople];
   const primaryMatch = findPersonWithSimilarName(trimmed, person.id, pool);
   if (!primaryMatch) return null;

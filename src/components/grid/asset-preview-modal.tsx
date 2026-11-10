@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FaceNameBox } from "@/components/people/face-name-box";
 import { cn } from "@/lib/utils";
 import { assetOriginalPath } from "@/lib/immich/asset-original-path";
+import {
+  BROWSE_PEEK_MAX_SCALE,
+  BROWSE_PEEK_MIN_SCALE,
+  computeBrowsePeekTransform,
+} from "@/lib/people/browse-peek-framing";
 import {
   containedImageRect,
   displayRectNearlyEqual,
@@ -24,6 +30,8 @@ import {
   type DisplayRect,
 } from "@/lib/people/face-box-layout";
 import {
+  invalidateAssetFaces,
+  loadAssetFaces,
   patchCachedFacePerson,
   patchCachedFaceUnlinked,
   subscribePersonRenames,
@@ -54,6 +62,19 @@ export type AssetPreviewTarget = {
   type?: string | null;
   /** When set (e.g. opening from Linked faces), this face keeps primary emphasis until hover moves. */
   highlightFaceId?: string | null;
+  /** Linked-faces row geometry when batched face fetch may not include this id yet. */
+  rowFace?: Pick<
+    ImmichAssetFace,
+    | "id"
+    | "boundingBoxX1"
+    | "boundingBoxY1"
+    | "boundingBoxX2"
+    | "boundingBoxY2"
+    | "imageWidth"
+    | "imageHeight"
+  >;
+  /** Linked-faces peek: show this person on the row face before full face fetch. */
+  highlightPerson?: Pick<ImmichPerson, "id" | "name"> | null;
 };
 
 const MIN_SCALE = 0.25;
@@ -188,6 +209,20 @@ type AssetPreviewModalProps = {
   ) => void;
   /** After description or other metadata saved from the modal footer. */
   onAssetUpdated?: (asset: ImmichAssetWithEnrichment) => void;
+  /** Hide Edit / Crop / Add face until the user chooses Enable editing (e.g. People linked-faces browse). */
+  editingLocked?: boolean;
+  /** Prev/next through a caller-defined sequence (e.g. linked face rows). */
+  onNavigate?: (delta: 1 | -1) => void;
+  navPosition?: { index: number; total: number };
+  /** Renders in a positioned pane (not a viewport-covering dialog). */
+  embedded?: boolean;
+  /** Description footer; default hidden when `embedded`. */
+  showDescriptionFooter?: boolean;
+  /** User zoom multiplier for linked-faces hover peek (persists across row hovers). */
+  browsePeekZoomMultiplier?: number;
+  onBrowsePeekZoomMultiplierChange?: (multiplier: number) => void;
+  /** For unlinked face naming (autocomplete + merge check). */
+  cataloguePeople?: ImmichPerson[];
 };
 
 export function AssetPreviewModal({
@@ -196,7 +231,17 @@ export function AssetPreviewModal({
   asset,
   onAssetReplaced,
   onAssetUpdated,
+  editingLocked = false,
+  onNavigate,
+  navPosition,
+  embedded = false,
+  showDescriptionFooter,
+  browsePeekZoomMultiplier = 1,
+  onBrowsePeekZoomMultiplierChange,
+  cataloguePeople = [],
 }: AssetPreviewModalProps) {
+  const descriptionFooterVisible =
+    showDescriptionFooter ?? !embedded;
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
@@ -212,6 +257,8 @@ export function AssetPreviewModal({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageContainerRef = useRef<HTMLDivElement | null>(null);
   const wheelCleanupRef = useRef<(() => void) | null>(null);
+  const browsePeekBaseScaleRef = useRef(1);
+  const browsePeekZoomMultiplierRef = useRef(browsePeekZoomMultiplier);
 
   const [contentType, setContentType] = useState<string | null>(null);
   const [mimeHint, setMimeHint] = useState<string | null>(null);
@@ -226,7 +273,9 @@ export function AssetPreviewModal({
   const [descriptionSaving, setDescriptionSaving] = useState(false);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
 
+  const [editUnlocked, setEditUnlocked] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const prevAssetIdRef = useRef<string | null>(null);
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(
     null,
@@ -261,13 +310,79 @@ export function AssetPreviewModal({
   const [unlinkLoading, setUnlinkLoading] = useState(false);
   const editImageLayoutRef = useRef({ w: 0, h: 0 });
 
+  /** Linked-faces hover peek: keep the list row’s face emphasized, not image hit-testing. */
+  const browsePeekMode = embedded && editingLocked && !editUnlocked;
+
+  useEffect(() => {
+    browsePeekZoomMultiplierRef.current = browsePeekZoomMultiplier;
+  }, [browsePeekZoomMultiplier]);
+
+  const resolveBrowsePeekFace = useCallback((): ImmichAssetFace | null => {
+    if (!highlightFaceId) return null;
+    const fromFaces = faces.find((f) => f.id === highlightFaceId);
+    if (fromFaces) return fromFaces;
+    const row = asset?.rowFace;
+    if (row && row.id === highlightFaceId) {
+      const person = asset?.highlightPerson ?? null;
+      return {
+        id: row.id,
+        boundingBoxX1: row.boundingBoxX1,
+        boundingBoxY1: row.boundingBoxY1,
+        boundingBoxX2: row.boundingBoxX2,
+        boundingBoxY2: row.boundingBoxY2,
+        imageWidth: row.imageWidth,
+        imageHeight: row.imageHeight,
+        person: person
+          ? {
+              ...person,
+              birthDate: null,
+              isHidden: false,
+              thumbnailPath: "",
+            }
+          : null,
+      };
+    }
+    return null;
+  }, [faces, highlightFaceId, asset?.rowFace, asset?.highlightPerson]);
+
+  const applyBrowsePeekFrame = useCallback(() => {
+    if (!browsePeekMode || !open || !layout) return;
+    if (dragging.current) return;
+    const viewport = viewportRef.current;
+    if (!viewport?.clientHeight) return;
+    const face = resolveBrowsePeekFace();
+    const result = computeBrowsePeekTransform({
+      containerW: layout.containerW,
+      containerH: layout.containerH,
+      naturalW: layout.naturalW,
+      naturalH: layout.naturalH,
+      viewportH: viewport.clientHeight,
+      face,
+      zoomMultiplier: browsePeekZoomMultiplier,
+      minScale: BROWSE_PEEK_MIN_SCALE,
+      maxScale: BROWSE_PEEK_MAX_SCALE,
+    });
+    browsePeekBaseScaleRef.current = result.baseScale;
+    setScale(result.scale);
+    setTx(result.tx);
+    setTy(result.ty);
+  }, [
+    browsePeekMode,
+    open,
+    layout,
+    browsePeekZoomMultiplier,
+    resolveBrowsePeekFace,
+  ]);
+
   /** While editing a name or face box we keep that face emphasized. */
   const emphasizedFaceId =
-    editingFaceId ??
-    geometryEditingFaceId ??
-    hoveredFaceId ??
-    selectedFaceId ??
-    highlightFaceId;
+    browsePeekMode && highlightFaceId
+      ? highlightFaceId
+      : editingFaceId ??
+        geometryEditingFaceId ??
+        hoveredFaceId ??
+        selectedFaceId ??
+        highlightFaceId;
 
   const stackFrontFaceId = emphasizedFaceId;
 
@@ -280,6 +395,14 @@ export function AssetPreviewModal({
       return 0;
     });
   }, [faces, stackFrontFaceId]);
+
+  const modalFaceOverlayList = useMemo(() => {
+    if (browsePeekMode && highlightFaceId) {
+      const face = resolveBrowsePeekFace();
+      return face ? [face] : [];
+    }
+    return facesPaintOrder;
+  }, [browsePeekMode, highlightFaceId, resolveBrowsePeekFace, facesPaintOrder]);
 
   const cropUrlRef = useRef<string | null>(null);
 
@@ -311,12 +434,49 @@ export function AssetPreviewModal({
     setFaceToolError(null);
   }, []);
 
+  const mergeRowFace = useCallback(
+    (loaded: ImmichAssetFace[]): ImmichAssetFace[] => {
+      const highlightId = asset?.highlightFaceId;
+      const row = asset?.rowFace;
+      if (
+        !highlightId ||
+        !row ||
+        row.id !== highlightId ||
+        loaded.some((f) => f.id === highlightId)
+      ) {
+        return loaded;
+      }
+      const person = asset?.highlightPerson ?? null;
+      return [
+        ...loaded,
+        {
+          id: row.id,
+          boundingBoxX1: row.boundingBoxX1,
+          boundingBoxY1: row.boundingBoxY1,
+          boundingBoxX2: row.boundingBoxX2,
+          boundingBoxY2: row.boundingBoxY2,
+          imageWidth: row.imageWidth,
+          imageHeight: row.imageHeight,
+          person: person
+            ? {
+                ...person,
+                birthDate: null,
+                isHidden: false,
+                thumbnailPath: "",
+              }
+            : null,
+        },
+      ];
+    },
+    [asset?.highlightFaceId, asset?.highlightPerson, asset?.rowFace],
+  );
+
   const reloadAssetFaces = useCallback(async () => {
     if (!asset) return;
-    const res = await fetch(`/api/immich/assets/${asset.id}/faces`);
-    const data = (await res.json()) as { faces?: ImmichAssetFace[] };
-    if (res.ok) setFaces(data.faces ?? []);
-  }, [asset]);
+    invalidateAssetFaces(asset.id);
+    const next = await loadAssetFaces(asset.id);
+    setFaces(mergeRowFace(next));
+  }, [asset, mergeRowFace]);
 
   const confirmUnlinkFace = useCallback(async () => {
     if (!unlinkFaceId || !asset) return;
@@ -423,37 +583,52 @@ export function AssetPreviewModal({
     }
   }, [asset, descriptionDraft, descriptionSaving, onAssetUpdated]);
 
+  const resetViewportForAssetSwitch = useCallback(() => {
+    const peekBrowse = embedded && editingLocked && !editUnlocked;
+    if (!peekBrowse) {
+      setScale(1);
+      setTx(0);
+      setTy(0);
+    }
+    setLayout(null);
+    setHoveredFaceId(null);
+    setSelectedFaceId(null);
+    setEditingFaceId(null);
+    setEditMode(false);
+    setEditUnlocked(false);
+    resetEditState();
+    setContentType(null);
+    setMimeHint(null);
+    setMetaTimes(null);
+    setDescriptionDraft("");
+    descriptionSavedRef.current = "";
+    descriptionFocusedRef.current = false;
+    setDescriptionSaving(false);
+    setDescriptionError(null);
+    setUnlinkFaceId(null);
+    setUnlinkLoading(false);
+    setSaveError(null);
+    setSaveOpen(false);
+    setFaces([]);
+  }, [resetEditState, embedded, editingLocked, editUnlocked]);
+
   const handleDialogOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
         if (descriptionDraft !== descriptionSavedRef.current) {
           void saveDescriptionIfChanged();
         }
-        setScale(1);
-        setTx(0);
-        setTy(0);
-        setLayout(null);
-        setHoveredFaceId(null);
-        setSelectedFaceId(null);
-        setEditingFaceId(null);
-        setEditMode(false);
-        resetEditState();
-        setContentType(null);
-        setMimeHint(null);
-        setMetaTimes(null);
-        setDescriptionDraft("");
-        descriptionSavedRef.current = "";
-        descriptionFocusedRef.current = false;
-        setDescriptionSaving(false);
-        setDescriptionError(null);
-        setUnlinkFaceId(null);
-        setUnlinkLoading(false);
-        setSaveError(null);
-        setSaveOpen(false);
+        prevAssetIdRef.current = null;
+        resetViewportForAssetSwitch();
       }
       onOpenChange(next);
     },
-    [onOpenChange, resetEditState, descriptionDraft, saveDescriptionIfChanged],
+    [
+      onOpenChange,
+      resetViewportForAssetSwitch,
+      descriptionDraft,
+      saveDescriptionIfChanged,
+    ],
   );
 
   const close = useCallback(
@@ -468,6 +643,8 @@ export function AssetPreviewModal({
       mimeHint ?? contentType,
       asset.originalFileName,
     );
+
+  const editingAllowed = canEdit && (!editingLocked || editUnlocked);
 
   const dirty = useMemo(() => {
     if (!naturalSize || !croppedAreaPixels) return false;
@@ -531,10 +708,31 @@ export function AssetPreviewModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (
+          embedded ||
+          !onNavigate ||
+          descriptionFocusedRef.current ||
+          editingFaceIdRef.current ||
+          editMode ||
+          faceToolCaptureActive ||
+          addFaceMode
+        ) {
+          return;
+        }
+        e.preventDefault();
+        onNavigate(e.key === "ArrowRight" ? 1 : -1);
+        return;
+      }
       if (e.key !== "Escape") return;
       if (descriptionFocusedRef.current) {
         e.preventDefault();
         descriptionTextareaRef.current?.blur();
+        return;
+      }
+      if (editingFaceIdRef.current) {
+        e.preventDefault();
+        setEditingFaceId(null);
         return;
       }
       if (editMode) {
@@ -546,24 +744,62 @@ export function AssetPreviewModal({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, close, editMode]);
+  }, [open, close, editMode, onNavigate, addFaceMode, faceToolCaptureActive, embedded]);
+
+  useEffect(() => {
+    if (!open || asset?.highlightFaceId == null) return;
+    setHoveredFaceId(null);
+    setSelectedFaceId(null);
+    setEditingFaceId(null);
+  }, [open, asset?.highlightFaceId]);
 
   useEffect(() => {
     if (!open || !asset) return;
+    if (browsePeekMode) {
+      setFaces(mergeRowFace([]));
+    }
     let cancelled = false;
-    fetch(`/api/immich/assets/${asset.id}/faces`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { faces?: ImmichAssetFace[] } | null) => {
-        if (cancelled) return;
-        setFaces(data?.faces ?? []);
+    void loadAssetFaces(asset.id)
+      .then((loaded) => {
+        if (!cancelled) setFaces(mergeRowFace(loaded));
       })
       .catch(() => {
-        if (!cancelled) setFaces([]);
+        if (!cancelled) setFaces(mergeRowFace([]));
       });
     return () => {
       cancelled = true;
     };
-  }, [open, asset]);
+  }, [
+    open,
+    asset,
+    asset?.id,
+    asset?.highlightFaceId,
+    asset?.rowFace,
+    browsePeekMode,
+    mergeRowFace,
+  ]);
+
+  useEffect(() => {
+    if (!open || !asset?.id) {
+      prevAssetIdRef.current = null;
+      return;
+    }
+    const prev = prevAssetIdRef.current;
+    prevAssetIdRef.current = asset.id;
+    if (prev !== null && prev !== asset.id) {
+      const flush =
+        descriptionDraft !== descriptionSavedRef.current
+          ? saveDescriptionIfChanged()
+          : Promise.resolve();
+      void flush.finally(() => resetViewportForAssetSwitch());
+    }
+  }, [
+    open,
+    asset?.id,
+    descriptionDraft,
+    resetViewportForAssetSwitch,
+    saveDescriptionIfChanged,
+  ]);
 
   useEffect(() => {
     return subscribePersonRenames((personId, name) => {
@@ -637,6 +873,29 @@ export function AssetPreviewModal({
     ro.observe(el);
     return () => ro.disconnect();
   }, [open, asset?.id, measureImageLayout, editMode]);
+
+  useEffect(() => {
+    if (!browsePeekMode || !open) return;
+    applyBrowsePeekFrame();
+  }, [
+    browsePeekMode,
+    open,
+    layout,
+    asset?.id,
+    asset?.highlightFaceId,
+    faces,
+    browsePeekZoomMultiplier,
+    applyBrowsePeekFrame,
+  ]);
+
+  useEffect(() => {
+    if (!browsePeekMode || !open) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => applyBrowsePeekFrame());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [browsePeekMode, open, applyBrowsePeekFrame, asset?.id]);
 
   const imageRect = useMemo((): ContainedImageRect | null => {
     if (editMode || !layout) return null;
@@ -837,6 +1096,10 @@ export function AssetPreviewModal({
 
   const updateHoverFromClientPoint = useCallback(
     (clientX: number, clientY: number) => {
+      if (browsePeekMode) {
+        setHoveredFaceId(null);
+        return;
+      }
       const container = imageContainerRef.current;
       if (
         !container ||
@@ -886,7 +1149,27 @@ export function AssetPreviewModal({
       );
       setHoveredFaceId(hit?.id ?? null);
     },
-    [faces, layout, editMode, addFaceMode],
+    [browsePeekMode, faces, layout, editMode, addFaceMode, geometryEditingFaceId],
+  );
+
+  const applyBrowsePeekWheelDelta = useCallback(
+    (delta: number) => {
+      if (delta === 0) return;
+      const factor = delta < 0 ? 1.08 : 1 / 1.08;
+      const base = browsePeekBaseScaleRef.current || 1;
+      const prevMult = browsePeekZoomMultiplierRef.current;
+      let nextMult = Math.max(0.01, prevMult * factor);
+      const unclampedScale = base * nextMult;
+      const nextScale = Math.min(
+        BROWSE_PEEK_MAX_SCALE,
+        Math.max(BROWSE_PEEK_MIN_SCALE, unclampedScale),
+      );
+      if (base > 0) {
+        nextMult = nextScale / base;
+      }
+      onBrowsePeekZoomMultiplierChange?.(nextMult);
+    },
+    [onBrowsePeekZoomMultiplierChange],
   );
 
   const attachViewportWheel = useCallback(() => {
@@ -896,6 +1179,15 @@ export function AssetPreviewModal({
     if (!open || !el || editMode || faceToolCaptureActive) return;
 
     const onWheel = (e: WheelEvent) => {
+      let delta =
+        Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (delta === 0 && e.deltaZ !== 0) delta = e.deltaZ;
+      if (delta === 0) return;
+
+      if (browsePeekMode) {
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -905,13 +1197,8 @@ export function AssetPreviewModal({
       const mx = e.clientX - cx;
       const my = e.clientY - cy;
 
-      let delta =
-        Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      if (delta === 0 && e.deltaZ !== 0) delta = e.deltaZ;
-
-      if (delta === 0) return;
-
       const factor = delta < 0 ? 1.08 : 1 / 1.08;
+
       setScale((prev) => {
         const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev * factor));
         const ratio = next / prev;
@@ -926,7 +1213,30 @@ export function AssetPreviewModal({
       el.removeEventListener("wheel", onWheel);
       wheelCleanupRef.current = null;
     };
-  }, [editMode, faceToolCaptureActive, open]);
+  }, [
+    applyBrowsePeekWheelDelta,
+    browsePeekMode,
+    editMode,
+    faceToolCaptureActive,
+    open,
+  ]);
+
+  useEffect(() => {
+    if (!browsePeekMode || !open) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.shiftKey) return;
+      let delta =
+        Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (delta === 0 && e.deltaZ !== 0) delta = e.deltaZ;
+      if (delta === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyBrowsePeekWheelDelta(delta);
+    };
+    window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () =>
+      window.removeEventListener("wheel", onWheel, { capture: true });
+  }, [applyBrowsePeekWheelDelta, browsePeekMode, open]);
 
   const setViewportRef = useCallback(
     (el: HTMLDivElement | null) => {
@@ -1101,9 +1411,15 @@ export function AssetPreviewModal({
     handleDialogOpenChange,
   ])
 
-  if (!asset) return null;
+  if (!asset || !open) return null;
 
   const src = assetOriginalPath(asset.id);
+
+  const shellClassName = embedded
+    ? "flex h-[min(85vh,calc(100dvh-5.5rem))] min-h-0 w-full max-w-5xl flex-col gap-0 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+  : cn(
+        "!flex max-h-[85vh] h-[85vh] min-h-0 w-[85vw] max-w-[85vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[85vw]",
+      );
 
   const footerHelp = editMode
     ? cropToolActive
@@ -1115,23 +1431,33 @@ export function AssetPreviewModal({
         ? "New face: drag a box on the image · resize with handles · ✓ when positioned"
         : addFaceMode && addFaceRectConfirmed
           ? "Link the new face to a person or create one · Back to reposition the box"
-          : "Wheel: zoom · drag: pan · face names always shown · pen on linked faces to move the box · Add face for a new rectangle · Esc or ✕: close";
+          : embedded
+            ? "Wheel: zoom · drag: pan · hover another face in the panel to switch"
+            : "Wheel: zoom · drag: pan · face names always shown · pen on linked faces to move the box · Add face for a new rectangle · Esc or ✕: close";
 
-  return (
-    <>
-    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent
-        showCloseButton
-        className={cn(
-          "!flex max-h-[85vh] h-[85vh] min-h-0 w-[85vw] max-w-[85vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[85vw]",
-        )}
-      >
-        <DialogTitle className="sr-only">
-          Preview: {asset.originalFileName || asset.id}
-        </DialogTitle>
+  const previewTitle = `Preview: ${asset.originalFileName || asset.id}`;
 
+  const previewPanel = (
+      <>
         <div className="flex shrink-0 flex-col gap-1.5 border-b border-border/60 bg-popover px-2 py-1.5">
-          {canEdit ? (
+          {canEdit && editingLocked && !editUnlocked ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setEditUnlocked(true)}
+              >
+                Enable editing
+              </Button>
+              {navPosition ? (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {navPosition.index + 1} / {navPosition.total}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {editingAllowed ? (
             <>
               {!editMode ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -1261,11 +1587,11 @@ export function AssetPreviewModal({
                 </>
               )}
             </>
-          ) : (
+          ) : !editingLocked ? (
             <span className="text-xs text-muted-foreground">
               Editing not available for this file type.
             </span>
-          )}
+          ) : null}
           {saveError ? (
             <span className="text-xs text-destructive">{saveError}</span>
           ) : null}
@@ -1289,6 +1615,35 @@ export function AssetPreviewModal({
           onPointerLeave={onPointerLeave}
           style={{ touchAction: editMode ? "auto" : "none" }}
         >
+          {onNavigate && navPosition && navPosition.total > 1 ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute left-2 top-1/2 z-40 -translate-y-1/2 bg-popover/90 shadow-md"
+                aria-label="Previous photo"
+                onClick={() => onNavigate(-1)}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <ChevronLeft className="size-5" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute right-2 top-1/2 z-40 -translate-y-1/2 bg-popover/90 shadow-md"
+                aria-label="Next photo"
+                onClick={() => onNavigate(1)}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <ChevronRight className="size-5" />
+              </Button>
+              <span className="pointer-events-none absolute bottom-2 left-1/2 z-40 -translate-x-1/2 rounded-md bg-popover/90 px-2 py-0.5 text-xs tabular-nums text-muted-foreground shadow-md">
+                {navPosition.index + 1} / {navPosition.total}
+              </span>
+            </>
+          ) : null}
           {editMode && cropImageUrl && naturalSize && croppedAreaPixels ? (
             <div className="relative min-h-0 flex-1">
               <EditImageCrop
@@ -1328,7 +1683,7 @@ export function AssetPreviewModal({
                 {imageRect &&
                 layout &&
                 faceChromeVisible &&
-                canEdit ? (
+                editingAllowed ? (
                   <div
                     className={cn(
                       "absolute",
@@ -1371,8 +1726,9 @@ export function AssetPreviewModal({
                     />
                   </div>
                 ) : null}
-                {imageRect && layout && faces.length > 0 ? (
+                {imageRect && layout && modalFaceOverlayList.length > 0 ? (
                   <div
+                    key={`${asset.id}:${highlightFaceId ?? ""}`}
                     className="pointer-events-none absolute z-30"
                     style={{
                       left: imageRect.x,
@@ -1381,7 +1737,7 @@ export function AssetPreviewModal({
                       height: imageRect.height,
                     }}
                   >
-                    {facesPaintOrder.map((face) => {
+                    {modalFaceOverlayList.map((face) => {
                       const box = faceBoxOnImage(
                         face,
                         layout.naturalW,
@@ -1398,18 +1754,18 @@ export function AssetPreviewModal({
                           faceId={face.id}
                           personId={face.person?.id ?? null}
                           name={face.person?.name ?? ""}
+                          imageZoomScale={scale}
+                          assetId={asset.id}
+                          cataloguePeople={cataloguePeople}
+                          syncEditingFaceId={editingFaceId}
                           accurateFaceOutline
+                          faceOutlineEmphasis={emphasized ? "primary" : "subtle"}
                           suppressOutline={rectEditing}
-                          className={cn(
-                            "transition-colors duration-150",
-                            emphasized
-                              ? "border-2 border-primary shadow-[0_0_0_1px_rgba(0,0,0,0.85)]"
-                              : "border border-white/45",
-                          )}
+                          className="transition-colors duration-150"
                           style={faceBoxPercentStyle(box)}
                           stackFront={stackFront}
                           showLabel={emphasized}
-                          alwaysShowLabel
+                          alwaysShowLabel={!browsePeekMode || emphasized}
                           unlinkedPlaceholder="Unknown"
                           onSelectedChange={(selected) => {
                             setSelectedFaceId((current) => {
@@ -1418,7 +1774,7 @@ export function AssetPreviewModal({
                             });
                           }}
                           rectangleAdjust={
-                            canEdit && faceChromeVisible && isLinked
+                            editingAllowed && faceChromeVisible && isLinked
                               ? {
                                   enabled: true,
                                   disabled: !faceToolsInteractive,
@@ -1492,54 +1848,80 @@ export function AssetPreviewModal({
           />
         </div>
 
-        <div className="relative z-10 flex shrink-0 flex-col border-t border-border/60 bg-popover">
-          <div className="px-3 py-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Description
-              </span>
-              <textarea
-                ref={descriptionTextareaRef}
-                value={descriptionDraft}
-                disabled={descriptionSaving || !asset}
-                rows={3}
-                placeholder="Add a description…"
-                className={cn(
-                  "max-h-[5.5rem] min-h-[3.5rem] resize-y rounded-md border border-input bg-background px-2 py-1.5 text-sm leading-snug outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  descriptionError && "border-destructive",
-                )}
-                onChange={(e) => {
-                  setDescriptionDraft(e.target.value);
-                  setDescriptionError(null);
-                }}
-                onFocus={() => {
-                  descriptionFocusedRef.current = true;
-                  setDescriptionError(null);
-                }}
-                onBlur={() => {
-                  descriptionFocusedRef.current = false;
-                  void saveDescriptionIfChanged();
-                }}
-                onKeyDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-              />
-              {descriptionSaving ? (
-                <span className="text-[11px] text-muted-foreground">
-                  Saving…
+        {descriptionFooterVisible ? (
+          <div className="relative z-10 flex shrink-0 flex-col border-t border-border/60 bg-popover">
+            <div className="px-3 py-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Description
                 </span>
-              ) : descriptionError ? (
-                <span className="text-[11px] text-destructive">
-                  {descriptionError}
-                </span>
-              ) : null}
-            </label>
+                <textarea
+                  ref={descriptionTextareaRef}
+                  value={descriptionDraft}
+                  disabled={descriptionSaving || !asset}
+                  rows={3}
+                  placeholder="Add a description…"
+                  className={cn(
+                    "max-h-[5.5rem] min-h-[3.5rem] resize-y rounded-md border border-input bg-background px-2 py-1.5 text-sm leading-snug outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    descriptionError && "border-destructive",
+                  )}
+                  onChange={(e) => {
+                    setDescriptionDraft(e.target.value);
+                    setDescriptionError(null);
+                  }}
+                  onFocus={() => {
+                    descriptionFocusedRef.current = true;
+                    setDescriptionError(null);
+                  }}
+                  onBlur={() => {
+                    descriptionFocusedRef.current = false;
+                    void saveDescriptionIfChanged();
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                />
+                {descriptionSaving ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Saving…
+                  </span>
+                ) : descriptionError ? (
+                  <span className="text-[11px] text-destructive">
+                    {descriptionError}
+                  </span>
+                ) : null}
+              </label>
+            </div>
+            <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+              {footerHelp}
+            </p>
           </div>
-          <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+        ) : (
+          <p className="shrink-0 border-t border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
             {footerHelp}
           </p>
-        </div>
-      </DialogContent>
-    </Dialog>
+        )}
+      </>
+  );
+
+  return (
+    <>
+    {embedded ? (
+      <div
+        className={shellClassName}
+        role="region"
+        aria-label={previewTitle}
+      >
+        <p className="sr-only">{previewTitle}</p>
+        {previewPanel}
+      </div>
+    ) : (
+      <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+        <DialogContent showCloseButton className={shellClassName}>
+          <DialogTitle className="sr-only">{previewTitle}</DialogTitle>
+          {previewPanel}
+        </DialogContent>
+      </Dialog>
+    )}
 
     <ConfirmDialog
       open={unlinkFaceId !== null}

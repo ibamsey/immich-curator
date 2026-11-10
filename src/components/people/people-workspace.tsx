@@ -35,6 +35,12 @@ import {
   sortPeopleBySurnameFirst,
   uniquePeopleByDisplayName,
 } from "@/lib/people/person-name-sort";
+import type { LinkedFacePeek } from "@/lib/people/linked-face-peek";
+import {
+  AssetPreviewModal,
+  type AssetPreviewTarget,
+} from "@/components/grid/asset-preview-modal";
+import { LinkedFaceCenterPeek } from "@/components/people/linked-face-center-peek";
 
 type Selection =
   | { kind: "person"; id: string }
@@ -89,6 +95,16 @@ export function PeopleWorkspace({
   const mounted = useRef(true);
   const [personRhsPanelView, setPersonRhsPanelViewState] =
     useState<PersonRhsPanelView>("photos");
+  const [linkedFacePeek, setLinkedFacePeek] = useState<LinkedFacePeek | null>(
+    null,
+  );
+  const [browsePeekZoomMultiplier, setBrowsePeekZoomMultiplier] = useState(1);
+  const [linkedFaceEditOpen, setLinkedFaceEditOpen] = useState(false);
+  const [linkedFaceEditTarget, setLinkedFaceEditTarget] =
+    useState<AssetPreviewTarget | null>(null);
+  const linkedFaceMetaRef = useRef<
+    Record<string, { originalFileName: string; type?: string }>
+  >({});
 
   const tabRef = useRef<PeopleTab>(initialTab);
   useEffect(() => {
@@ -106,9 +122,74 @@ export function PeopleWorkspace({
     }
   }, []);
 
+  const ensureLinkedFaceMeta = useCallback((assetId: string) => {
+    if (linkedFaceMetaRef.current[assetId]) return;
+    fetch(`/api/immich/assets/${assetId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (data: {
+          id?: string;
+          originalFileName?: string;
+          type?: string;
+        } | null) => {
+          if (!data?.id) return;
+          linkedFaceMetaRef.current[assetId] = {
+            originalFileName: String(data.originalFileName ?? ""),
+            type: data.type,
+          };
+          setLinkedFacePeek((prev) => (prev?.assetId === assetId ? { ...prev } : prev));
+          setLinkedFaceEditTarget((prev) =>
+            prev?.id === assetId
+              ? {
+                  ...prev,
+                  originalFileName: String(data.originalFileName ?? ""),
+                  type: data.type,
+                }
+              : prev,
+          );
+        },
+      )
+      .catch(() => {});
+  }, []);
+
+  const onLinkedFaceHover = useCallback(
+    (target: LinkedFacePeek | null) => {
+      if (linkedFaceEditOpen) return;
+      setLinkedFacePeek(target);
+      if (target) ensureLinkedFaceMeta(target.assetId);
+    },
+    [ensureLinkedFaceMeta, linkedFaceEditOpen],
+  );
+
+  const onLinkedFaceClickEdit = useCallback(
+    (assetId: string, faceId: string, face: UnassignedFace) => {
+      setLinkedFacePeek(null);
+      const meta = linkedFaceMetaRef.current[assetId];
+      setLinkedFaceEditTarget({
+        id: assetId,
+        originalFileName: meta?.originalFileName ?? "",
+        type: meta?.type,
+        highlightFaceId: faceId,
+        rowFace: face,
+      });
+      setLinkedFaceEditOpen(true);
+      ensureLinkedFaceMeta(assetId);
+    },
+    [ensureLinkedFaceMeta],
+  );
+
   const setPersonRhsPanelView = useCallback((view: PersonRhsPanelView) => {
     setPersonRhsPanelViewState(view);
     writeStoredPersonRhsPanelView(view);
+    if (view !== "faces") {
+      setLinkedFacePeek(null);
+      setBrowsePeekZoomMultiplier(1);
+    }
+  }, []);
+
+  const dismissLinkedFacePeek = useCallback(() => {
+    setLinkedFacePeek(null);
+    setBrowsePeekZoomMultiplier(1);
   }, []);
 
   useEffect(() => {
@@ -306,6 +387,29 @@ export function PeopleWorkspace({
 
   const defaultAlbumId = sharedAlbumIds[0] ?? null;
 
+  const linkedFacePeekAsset = useMemo((): AssetPreviewTarget | null => {
+    if (!linkedFacePeek) return null;
+    const meta = linkedFaceMetaRef.current[linkedFacePeek.assetId];
+    const highlightPerson =
+      linkedFacePeek.rowKind === "linked" && selectedPerson
+        ? { id: selectedPerson.id, name: selectedPerson.name }
+        : null;
+    return {
+      id: linkedFacePeek.assetId,
+      originalFileName: meta?.originalFileName ?? "",
+      type: meta?.type,
+      highlightFaceId: linkedFacePeek.faceId,
+      rowFace: linkedFacePeek.face,
+      highlightPerson,
+    };
+  }, [linkedFacePeek, selectedPerson]);
+
+  const showLinkedFacePeek =
+    Boolean(linkedFacePeek) &&
+    Boolean(linkedFacePeekAsset) &&
+    personRhsPanelView === "faces" &&
+    !linkedFaceEditOpen;
+
   const panelContent =
     selection?.kind === "face" ? (
       <DetectionContextPanel
@@ -330,6 +434,9 @@ export function PeopleWorkspace({
         onSwitchContextPerson={onSelectPerson}
         onFaceUnlinkedFromPerson={onFaceUnlinkedFromPerson}
         onFaceLinkedFromPerson={onFaceLinkedFromPerson}
+        linkedFacePeekId={linkedFacePeek?.faceId ?? null}
+        onLinkedFaceHover={onLinkedFaceHover}
+        onLinkedFaceClickEdit={onLinkedFaceClickEdit}
       />
     );
 
@@ -344,6 +451,7 @@ export function PeopleWorkspace({
         : `${unnamed.length + detections.length} to name`;
 
   return (
+    <>
     <AppShell
       targetEmail={shell.targetEmail}
       connectionOk={shell.connectionOk}
@@ -351,7 +459,13 @@ export function PeopleWorkspace({
       headerSubtitle={subtitle}
       panelTitle="Person"
       panelOpen={panelOpen}
-      onPanelOpenChange={setPanelOpen}
+      onPanelOpenChange={(open) => {
+        setPanelOpen(open);
+        if (!open) {
+          setLinkedFacePeek(null);
+          setLinkedFaceEditOpen(false);
+        }
+      }}
       panelContent={panelContent}
     >
       {loadError ? (
@@ -435,5 +549,37 @@ export function PeopleWorkspace({
         </>
       )}
     </AppShell>
+    {showLinkedFacePeek && linkedFacePeekAsset ? (
+      <LinkedFaceCenterPeek
+        asset={linkedFacePeekAsset}
+        panelOpen={panelOpen}
+        onDismiss={dismissLinkedFacePeek}
+        browsePeekZoomMultiplier={browsePeekZoomMultiplier}
+        onBrowsePeekZoomMultiplierChange={setBrowsePeekZoomMultiplier}
+        cataloguePeople={people}
+      />
+    ) : null}
+    <AssetPreviewModal
+      open={linkedFaceEditOpen}
+      onOpenChange={(open) => {
+        setLinkedFaceEditOpen(open);
+        if (!open) setLinkedFaceEditTarget(null);
+      }}
+      asset={linkedFaceEditTarget}
+      cataloguePeople={people}
+      onAssetReplaced={(_old, next) => {
+        linkedFaceMetaRef.current[next.id] = {
+          originalFileName: next.originalFileName,
+          type: next.type,
+        };
+        setLinkedFaceEditTarget({
+          id: next.id,
+          originalFileName: next.originalFileName,
+          type: next.type,
+          highlightFaceId: linkedFaceEditTarget?.highlightFaceId,
+        });
+      }}
+    />
+    </>
   );
 }

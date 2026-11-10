@@ -73,6 +73,11 @@ export function subscribePersonRenames(
 
 const BATCH_SIZE = 48;
 
+/** Drop cached faces for an asset (e.g. after geometry edit). */
+export function invalidateAssetFaces(assetId: string) {
+  cache.delete(assetId);
+}
+
 export function loadAssetFaces(assetId: string): Promise<ImmichAssetFace[]> {
   const cached = cache.get(assetId);
   if (cached) return Promise.resolve(cached);

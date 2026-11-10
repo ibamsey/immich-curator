@@ -7,10 +7,8 @@ import { faceBoxPercent, faceCropImageStyle } from "@/lib/people/face-box-layout
 import type { ImmichPerson } from "@/lib/immich/types";
 import type { UnassignedFace } from "@/lib/people/unassigned-face";
 import type { PersonFacePanelRow } from "@/lib/people/person-face-panel-row";
-import {
-  AssetPreviewModal,
-  type AssetPreviewTarget,
-} from "@/components/grid/asset-preview-modal";
+import { preloadAssetOriginals } from "@/lib/people/preload-asset-originals";
+import type { LinkedFacePeek } from "@/lib/people/linked-face-peek";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -22,6 +20,13 @@ type PersonLinkedFacesSectionProps = {
   onPersonUpdated?: (person: ImmichPerson) => void;
   onFaceUnlinked?: (face: UnassignedFace) => void;
   onFaceLinked?: (face: UnassignedFace) => void;
+  activePeekFaceId?: string | null;
+  onFaceHover?: (target: LinkedFacePeek | null) => void;
+  onFaceClickEdit?: (
+    assetId: string,
+    faceId: string,
+    face: UnassignedFace,
+  ) => void;
 };
 
 function rowLabel(row: PersonFacePanelRow): string {
@@ -42,11 +47,9 @@ function rowLabel(row: PersonFacePanelRow): string {
 function FaceRowThumb({
   face,
   linkedCountOnAsset,
-  onOpenFullImage,
 }: {
   face: UnassignedFace;
   linkedCountOnAsset?: number;
-  onOpenFullImage: (assetId: string, faceId: string) => void;
 }) {
   const box = faceBoxPercent({
     id: face.id,
@@ -60,12 +63,9 @@ function FaceRowThumb({
   });
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpenFullImage(face.assetId, face.id)}
-      className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-sm bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90"
-      title="Open full image preview (zoom/pan)"
-      aria-label="Open full image preview"
+    <div
+      className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-sm bg-muted"
+      aria-hidden
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -82,7 +82,7 @@ function FaceRowThumb({
           {linkedCountOnAsset}
         </span>
       ) : null}
-    </button>
+    </div>
   );
 }
 
@@ -91,6 +91,9 @@ export function PersonLinkedFacesSection({
   onPersonUpdated,
   onFaceUnlinked,
   onFaceLinked,
+  activePeekFaceId = null,
+  onFaceHover,
+  onFaceClickEdit,
 }: PersonLinkedFacesSectionProps) {
   const [rows, setRows] = useState<PersonFacePanelRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,42 +107,15 @@ export function PersonLinkedFacesSection({
   const [confirmLinkRow, setConfirmLinkRow] = useState<PersonFacePanelRow | null>(
     null,
   );
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewAsset, setPreviewAsset] = useState<AssetPreviewTarget | null>(
-    null,
+  const visibleRows = useMemo(
+    () => rows.slice(0, visibleCount),
+    [rows, visibleCount],
   );
 
-  const openAssetPreview = useCallback(
-    (assetId: string, faceId: string) => {
-    setPreviewAsset({
-      id: assetId,
-      originalFileName: "",
-      highlightFaceId: faceId,
-    });
-    setPreviewOpen(true);
-    fetch(`/api/immich/assets/${assetId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (data: {
-          id?: string;
-          originalFileName?: string;
-          type?: string;
-        } | null) => {
-          if (!data?.id) return;
-          setPreviewAsset({
-            id: data.id,
-            originalFileName: String(data.originalFileName ?? ""),
-            type: data.type,
-            highlightFaceId: faceId,
-          });
-        },
-      )
-      .catch(() => {
-        /* keep fallback id-only target */
-      });
-    },
-    [],
-  );
+  useEffect(() => {
+    if (visibleRows.length === 0) return;
+    preloadAssetOriginals(visibleRows.map((row) => row.face.assetId));
+  }, [visibleRows]);
 
   const fetchRows = useCallback(
     async (mode: "linked" | "scan") => {
@@ -266,7 +242,6 @@ export function PersonLinkedFacesSection({
   }, [rows]);
 
   const linkedCount = rows.filter((r) => r.kind === "linked").length;
-  const visibleRows = rows.slice(0, visibleCount);
   const hasMore = visibleCount < rows.length;
 
   if (loading) {
@@ -291,8 +266,9 @@ export function PersonLinkedFacesSection({
         <p className="shrink-0 text-xs text-destructive">{error}</p>
       ) : null}
       <p className="shrink-0 text-xs text-muted-foreground">
-        Linked faces in shared albums for this person. Use “Find similar unassigned
-        faces” to scan the library for candidates (slow on large libraries).
+        Hover a row to preview the source photo in the main area; click a row for
+        full edit tools. Use “Find similar unassigned faces” to scan the library
+        (slow on large libraries).
         {linkedCount > 0 ? ` (${linkedCount} linked)` : ""}
       </p>
       <div className="flex shrink-0 flex-wrap gap-2">
@@ -316,17 +292,36 @@ export function PersonLinkedFacesSection({
           No linked faces in shared albums for this person.
         </p>
       ) : (
-        <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
+        <ul
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5"
+          onMouseLeave={() => onFaceHover?.(null)}
+        >
           {visibleRows.map((row) => {
             const { face } = row;
             const busy = pendingId !== null;
+            const peeking = activePeekFaceId === face.id;
             return (
               <li
                 key={face.id}
                 className={cn(
-                  "flex items-stretch gap-2 rounded-md border border-border bg-card p-1.5",
+                  "flex cursor-pointer items-stretch gap-2 rounded-md border bg-card p-1.5 transition-colors",
+                  peeking
+                    ? "border-primary ring-1 ring-primary/40"
+                    : "border-border hover:border-primary/50",
                   busy && "opacity-60",
                 )}
+                onMouseEnter={() =>
+                  onFaceHover?.({
+                    assetId: face.assetId,
+                    faceId: face.id,
+                    face,
+                    rowKind: row.kind,
+                  })
+                }
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("button")) return;
+                  onFaceClickEdit?.(face.assetId, face.id, face);
+                }}
               >
                 <FaceRowThumb
                   face={face}
@@ -335,7 +330,6 @@ export function PersonLinkedFacesSection({
                       ? linkedCountByAsset.get(face.assetId)
                       : undefined
                   }
-                  onOpenFullImage={openAssetPreview}
                 />
                 <p className="min-w-0 flex-1 self-center text-xs text-muted-foreground">
                   {rowLabel(row)}
@@ -408,32 +402,6 @@ export function PersonLinkedFacesSection({
         confirmVariant="default"
         loading={pendingId !== null}
         onConfirm={runLink}
-      />
-      <AssetPreviewModal
-        key={
-          previewAsset
-            ? `${previewAsset.id}-${previewAsset.highlightFaceId ?? ""}`
-            : "closed"
-        }
-        open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) setPreviewAsset(null);
-        }}
-        asset={previewAsset}
-        onAssetReplaced={(_old, next) => {
-          setPreviewAsset((prev) =>
-            prev
-              ? {
-                  id: next.id,
-                  originalFileName: next.originalFileName,
-                  type: next.type,
-                  highlightFaceId: prev.highlightFaceId,
-                }
-              : null,
-          );
-          loadLinkedRows();
-        }}
       />
     </div>
   );

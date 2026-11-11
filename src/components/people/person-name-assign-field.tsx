@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -72,9 +73,18 @@ export function PersonNameAssignField({
     useState<PersonMergeSuggestionRequest | null>(null);
   const [mergeLoading, setMergeLoading] = useState(false);
   const [listOpen, setListOpen] = useState(false);
+  const [portaled, setPortaled] = useState(false);
   const debounceRef = useRef<number | null>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
   const inputRef = inputRefProp ?? localInputRef;
+  const pendingCreateNameRef = useRef("");
+  const blockBlurCancelRef = useRef(false);
+
+  useEffect(() => setPortaled(true), []);
+
+  useEffect(() => {
+    blockBlurCancelRef.current = createOpen || mergePrompt != null;
+  }, [createOpen, mergePrompt]);
 
   useEffect(() => {
     queueMicrotask(() => inputRef.current?.focus());
@@ -144,17 +154,20 @@ export function PersonNameAssignField({
   );
 
   const createNew = useCallback(async () => {
-    const trimmed = name.trim();
+    const trimmed = pendingCreateNameRef.current || name.trim();
     if (!trimmed) return;
+    blockBlurCancelRef.current = true;
     setSaving(true);
     onError?.(null);
     try {
       onAssigned(await putFace({ name: trimmed }));
       setCreateOpen(false);
+      pendingCreateNameRef.current = "";
     } catch (e) {
       onError?.(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+      blockBlurCancelRef.current = false;
     }
   }, [name, onAssigned, onError, putFace]);
 
@@ -186,12 +199,15 @@ export function PersonNameAssignField({
         cataloguePeople,
       );
       if (suggestion) {
+        blockBlurCancelRef.current = true;
         setMergePrompt({
           ...suggestion,
           editingImageUrl: assetId ? assetThumbnailPath(assetId) : undefined,
         });
         return;
       }
+      pendingCreateNameRef.current = trimmed;
+      blockBlurCancelRef.current = true;
       setCreateOpen(true);
     } catch (e) {
       onError?.(e instanceof Error ? e.message : "Name check failed");
@@ -214,6 +230,7 @@ export function PersonNameAssignField({
 
   const onKeepSeparate = async () => {
     if (!mergePrompt) return;
+    blockBlurCancelRef.current = true;
     setMergeLoading(true);
     onError?.(null);
     try {
@@ -223,11 +240,13 @@ export function PersonNameAssignField({
       onError?.(e instanceof Error ? e.message : "Save failed");
     } finally {
       setMergeLoading(false);
+      blockBlurCancelRef.current = false;
     }
   };
 
   const onMergeSamePerson = async (targetPersonId: string) => {
     if (!mergePrompt) return;
+    blockBlurCancelRef.current = true;
     setMergeLoading(true);
     onError?.(null);
     try {
@@ -237,6 +256,7 @@ export function PersonNameAssignField({
       onError?.(e instanceof Error ? e.message : "Save failed");
     } finally {
       setMergeLoading(false);
+      blockBlurCancelRef.current = false;
     }
   };
 
@@ -292,19 +312,21 @@ export function PersonNameAssignField({
             }
           }}
           onBlur={() => {
-            if (createOpen || mergePrompt) return;
             window.setTimeout(() => {
+              if (blockBlurCancelRef.current || saving || mergeLoading) return;
               const active = document.activeElement;
               if (active === inputRef.current) return;
               if (
                 active instanceof HTMLElement &&
-                active.closest("[data-person-name-assign-root]")
+                (active.closest("[data-person-name-assign-root]") ||
+                  active.closest('[data-slot="dialog-content"]') ||
+                  active.closest('[data-slot="dialog-overlay"]'))
               ) {
                 return;
               }
               setListOpen(false);
               onCancel();
-            }, 0);
+            }, 120);
           }}
         />
         {listOpen && candidates.length > 0 ? (
@@ -340,39 +362,58 @@ export function PersonNameAssignField({
         ) : null}
       </div>
 
-      <ConfirmDialog
-        open={createOpen}
-        elevated
-        onOpenChange={setCreateOpen}
-        title="Create new person?"
-        description={`No existing person matches "${trimmed}". Create a new person and assign this face?`}
-        confirmLabel="Create"
-        loading={saving}
-        onConfirm={() => void createNew()}
-      />
+      {portaled
+        ? createPortal(
+            <>
+              <ConfirmDialog
+                open={createOpen}
+                elevated
+                onOpenChange={(open) => {
+                  setCreateOpen(open);
+                  if (!open) {
+                    pendingCreateNameRef.current = "";
+                    blockBlurCancelRef.current = false;
+                  }
+                }}
+                title="Create new person?"
+                description={`No existing person matches "${pendingCreateNameRef.current || trimmed}". Create a new person and assign this face?`}
+                confirmLabel="Create"
+                loading={saving}
+                onConfirm={() => void createNew()}
+              />
 
-      <Dialog
-        open={mergePrompt != null}
-        onOpenChange={(open) => {
-          if (!open) setMergePrompt(null);
-        }}
-      >
-        <DialogContent
-          className="z-[100] max-w-md"
-          overlayClassName="z-[100]"
-        >
-          <DialogTitle className="sr-only">Similar name found</DialogTitle>
-          {mergePrompt ? (
-            <PersonMergeSuggestionPanel
-              request={mergePrompt}
-              loading={mergeLoading}
-              onDismiss={() => setMergePrompt(null)}
-              onKeepSeparate={() => void onKeepSeparate()}
-              onMergeSamePerson={(id) => void onMergeSamePerson(id)}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+              <Dialog
+                open={mergePrompt != null}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setMergePrompt(null);
+                    blockBlurCancelRef.current = false;
+                  }
+                }}
+              >
+                <DialogContent
+                  className="z-[100] max-w-md"
+                  overlayClassName="z-[100]"
+                >
+                  <DialogTitle className="sr-only">Similar name found</DialogTitle>
+                  {mergePrompt ? (
+                    <PersonMergeSuggestionPanel
+                      request={mergePrompt}
+                      loading={mergeLoading}
+                      onDismiss={() => {
+                        setMergePrompt(null);
+                        blockBlurCancelRef.current = false;
+                      }}
+                      onKeepSeparate={() => void onKeepSeparate()}
+                      onMergeSamePerson={(id) => void onMergeSamePerson(id)}
+                    />
+                  ) : null}
+                </DialogContent>
+              </Dialog>
+            </>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

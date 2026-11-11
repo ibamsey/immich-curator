@@ -8,7 +8,7 @@ import {
   type MouseEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Link2OffIcon, PencilIcon } from "lucide-react";
+import { Link2OffIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PersonNameAssignField } from "@/components/people/person-name-assign-field";
@@ -37,6 +37,8 @@ type FaceNameBoxProps = {
   onUnlinked?: (faceId: string) => void;
   /** When set, skip nested confirm dialog (e.g. inside another modal). */
   onRequestUnlink?: (faceId: string) => void;
+  /** Hard-delete the face record (modal). */
+  onRequestDelete?: (faceId: string) => void;
   /** Draw border on exact face bounds; hit slop does not shift the outline (modal). */
   accurateFaceOutline?: boolean;
   /** Hide the face rectangle border (e.g. while geometry editor is active). */
@@ -179,6 +181,7 @@ export function FaceNameBox({
   onSaved,
   onUnlinked,
   onRequestUnlink,
+  onRequestDelete,
   accurateFaceOutline = false,
   suppressOutline = false,
   stackFront = false,
@@ -426,6 +429,29 @@ export function FaceNameBox({
     </Button>
   ) : null;
 
+  const deleteButton =
+    onRequestDelete && showChipContents ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="size-5 shrink-0 text-muted-foreground hover:text-destructive"
+        title="Delete face box permanently"
+        aria-label="Delete face box permanently"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearClickTimer();
+          setError(null);
+          onRequestDelete(faceId);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Trash2Icon className="size-3.5" />
+      </Button>
+    ) : null;
+
   const handleRootClick = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -537,6 +563,7 @@ export function FaceNameBox({
             style={chipZoomStyle}
           >
             {unlinkButton}
+            {deleteButton}
             {isLinked ? (
               <input
                 ref={inputRef}
@@ -616,6 +643,7 @@ export function FaceNameBox({
             style={chipZoomStyle}
           >
             {unlinkButton}
+            {deleteButton}
             <button
               type="button"
               className={cn(

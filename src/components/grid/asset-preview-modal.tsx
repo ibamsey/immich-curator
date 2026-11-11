@@ -28,7 +28,12 @@ import {
   manualFacePayload,
   type ContainedImageRect,
   type DisplayRect,
+  type FaceBoxPixels,
 } from "@/lib/people/face-box-layout";
+import {
+  listOverlappingFaceIds,
+  pickFaceMatchingBox,
+} from "@/lib/people/face-overlap";
 import {
   invalidateAssetFaces,
   loadAssetFaces,
@@ -308,6 +313,8 @@ export function AssetPreviewModal({
   const [faceToolError, setFaceToolError] = useState<string | null>(null);
   const [unlinkFaceId, setUnlinkFaceId] = useState<string | null>(null);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
+  const [deleteFaceId, setDeleteFaceId] = useState<string | null>(null);
+  const [deleteFaceLoading, setDeleteFaceLoading] = useState(false);
   const editImageLayoutRef = useRef({ w: 0, h: 0 });
 
   /** Linked-faces hover peek: keep the list row’s face emphasized, not image hit-testing. */
@@ -404,6 +411,13 @@ export function AssetPreviewModal({
     return facesPaintOrder;
   }, [browsePeekMode, highlightFaceId, resolveBrowsePeekFace, facesPaintOrder]);
 
+  const faceNameBoxList = useMemo(() => {
+    if (addFaceMode) return [];
+    return modalFaceOverlayList.filter(
+      (face) => face.id !== geometryEditingFaceId,
+    );
+  }, [addFaceMode, geometryEditingFaceId, modalFaceOverlayList]);
+
   const cropUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -478,6 +492,26 @@ export function AssetPreviewModal({
     setFaces(mergeRowFace(next));
   }, [asset, mergeRowFace]);
 
+  const pruneRedundantOverlappingFaces = useCallback(
+    async (pixels: FaceBoxPixels, personId: string) => {
+      if (!asset) return;
+      const loaded = await loadAssetFaces(asset.id);
+      const keep = pickFaceMatchingBox(loaded, pixels, personId);
+      if (!keep) return;
+      const removeIds = listOverlappingFaceIds(loaded, keep.id);
+      if (removeIds.length === 0) return;
+      for (const id of removeIds) {
+        await fetch(`/api/immich/faces/${id}?force=true`, {
+          method: "DELETE",
+        });
+      }
+      invalidateAssetFaces(asset.id);
+      const next = await loadAssetFaces(asset.id);
+      setFaces(mergeRowFace(next));
+    },
+    [asset, mergeRowFace],
+  );
+
   const confirmUnlinkFace = useCallback(async () => {
     if (!unlinkFaceId || !asset) return;
     setUnlinkLoading(true);
@@ -514,6 +548,39 @@ export function AssetPreviewModal({
     }
   }, [asset, geometryEditingFaceId, unlinkFaceId]);
 
+  const confirmDeleteFace = useCallback(async () => {
+    if (!deleteFaceId || !asset) return;
+    setDeleteFaceLoading(true);
+    setFaceToolError(null);
+    try {
+      const res = await fetch(
+        `/api/immich/faces/${deleteFaceId}?force=true`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        throw new Error(data.message ?? "Delete failed");
+      }
+      if (geometryEditingFaceId === deleteFaceId) {
+        setGeometryEditingFaceId(null);
+        setDraftDisplayRect(null);
+      }
+      setEditingFaceId((current) =>
+        current === deleteFaceId ? null : current,
+      );
+      setDeleteFaceId(null);
+      invalidateAssetFaces(asset.id);
+      await reloadAssetFaces();
+    } catch (e) {
+      setFaceToolError(e instanceof Error ? e.message : "Delete failed");
+      setDeleteFaceId(null);
+    } finally {
+      setDeleteFaceLoading(false);
+    }
+  }, [asset, deleteFaceId, geometryEditingFaceId, reloadAssetFaces]);
+
   const handleGeometryCommitted = useCallback(
     async (
       faceId: string,
@@ -538,9 +605,15 @@ export function AssetPreviewModal({
           };
           throw new Error(data.message ?? "Could not save face rectangle");
         }
+        const replacedId = faceId;
         setGeometryEditingFaceId(null);
         setDraftDisplayRect(null);
+        if (asset) {
+          invalidateAssetFaces(asset.id);
+          setFaces((prev) => prev.filter((f) => f.id !== replacedId));
+        }
         await reloadAssetFaces();
+        await pruneRedundantOverlappingFaces(pixels, personId);
       } catch (e) {
         setFaceToolError(
           e instanceof Error ? e.message : "Could not save face rectangle",
@@ -549,7 +622,7 @@ export function AssetPreviewModal({
         setGeometrySaving(false);
       }
     },
-    [asset, faces, reloadAssetFaces],
+    [asset, faces, pruneRedundantOverlappingFaces, reloadAssetFaces],
   );
 
   const saveDescriptionIfChanged = useCallback(async () => {
@@ -965,7 +1038,9 @@ export function AssetPreviewModal({
         setAddFaceMode(false);
         setAddFaceRectConfirmed(false);
         setDraftDisplayRect(null);
+        invalidateAssetFaces(asset.id);
         await reloadAssetFaces();
+        await pruneRedundantOverlappingFaces(pixels, person.id);
       } catch (e) {
         setFaceToolError(
           e instanceof Error ? e.message : "Could not add face",
@@ -981,6 +1056,7 @@ export function AssetPreviewModal({
       layout,
       naturalSize,
       previewImageLayout,
+      pruneRedundantOverlappingFaces,
       reloadAssetFaces,
     ],
   );
@@ -1719,14 +1795,14 @@ export function AssetPreviewModal({
                       addFaceRectConfirmed={addFaceRectConfirmed}
                       onAddFaceRectConfirm={confirmAddFaceRect}
                       onAddFaceCancel={cancelAddFace}
-                      showFaceOutlines={Boolean(addFaceMode)}
+                      showFaceOutlines={addFaceMode && !addFaceRectConfirmed}
                       showRectanglePens={false}
                       onGeometrySave={() => void saveFaceGeometry()}
                       onGeometryCancel={cancelFaceGeometry}
                     />
                   </div>
                 ) : null}
-                {imageRect && layout && modalFaceOverlayList.length > 0 ? (
+                {imageRect && layout && faceNameBoxList.length > 0 ? (
                   <div
                     key={`${asset.id}:${highlightFaceId ?? ""}`}
                     className="pointer-events-none absolute z-30"
@@ -1737,7 +1813,7 @@ export function AssetPreviewModal({
                       height: imageRect.height,
                     }}
                   >
-                    {modalFaceOverlayList.map((face) => {
+                    {faceNameBoxList.map((face) => {
                       const box = faceBoxOnImage(
                         face,
                         layout.naturalW,
@@ -1814,6 +1890,7 @@ export function AssetPreviewModal({
                             patchCachedFacePerson(asset.id, faceId, person);
                           }}
                           onRequestUnlink={(faceId) => setUnlinkFaceId(faceId)}
+                          onRequestDelete={(faceId) => setDeleteFaceId(faceId)}
                         />
                       );
                     })}
@@ -1929,12 +2006,26 @@ export function AssetPreviewModal({
         if (!next && !unlinkLoading) setUnlinkFaceId(null);
       }}
       title="Unlink this face?"
-      description="This removes the face from the linked person in Immich. You can assign a name again afterward."
+      description="Removes the person link only. The face rectangle stays on the photo as an unassigned detection (shows as Unknown)."
       confirmLabel="Unlink"
       confirmVariant="destructive"
       loading={unlinkLoading}
       elevated
       onConfirm={() => void confirmUnlinkFace()}
+    />
+
+    <ConfirmDialog
+      open={deleteFaceId !== null}
+      onOpenChange={(next) => {
+        if (!next && !deleteFaceLoading) setDeleteFaceId(null);
+      }}
+      title="Delete this face box?"
+      description="Permanently removes this face record from Immich. Immich will not recreate it until you run face detection on this asset again (e.g. from Immich admin). Use this to remove duplicate or mistaken boxes."
+      confirmLabel="Delete face"
+      confirmVariant="destructive"
+      loading={deleteFaceLoading}
+      elevated
+      onConfirm={() => void confirmDeleteFace()}
     />
 
     <ConfirmDialog

@@ -249,6 +249,41 @@ export function faceDisplayLabel(face: ImmichAssetFace): string {
   return "Unnamed";
 }
 
+function pixelRectArea(p: FaceBoxPixels): number {
+  return Math.max(0, p.x2 - p.x1) * Math.max(0, p.y2 - p.y1);
+}
+
+function pixelRectIntersection(a: FaceBoxPixels, b: FaceBoxPixels): number {
+  const x1 = Math.max(a.x1, b.x1);
+  const y1 = Math.max(a.y1, b.y1);
+  const x2 = Math.min(a.x2, b.x2);
+  const y2 = Math.min(a.y2, b.y2);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  return (x2 - x1) * (y2 - y1);
+}
+
+/** Intersection-over-union for two faces on the same image dimensions. */
+export function faceBoxIouFaces(a: ImmichAssetFace, b: ImmichAssetFace): number {
+  const pa = faceBoxPixels(a);
+  const pb = faceBoxPixels(b);
+  if (!pa || !pb) return 0;
+  if (pa.imageWidth !== pb.imageWidth || pa.imageHeight !== pb.imageHeight) {
+    const ba = faceBoxPixelsToPercent(pa);
+    const bb = faceBoxPixelsToPercent(pb);
+    const ix1 = Math.max(ba.left, bb.left);
+    const iy1 = Math.max(ba.top, bb.top);
+    const ix2 = Math.min(ba.left + ba.width, bb.left + bb.width);
+    const iy2 = Math.min(ba.top + ba.height, bb.top + bb.height);
+    if (ix2 <= ix1 || iy2 <= iy1) return 0;
+    const inter = (ix2 - ix1) * (iy2 - iy1);
+    const union = ba.width * ba.height + bb.width * bb.height - inter;
+    return union > 0 ? inter / union : 0;
+  }
+  const inter = pixelRectIntersection(pa, pb);
+  const union = pixelRectArea(pa) + pixelRectArea(pb) - inter;
+  return union > 0 ? inter / union : 0;
+}
+
 export function faceBoxPixels(face: ImmichAssetFace): FaceBoxPixels | null {
   const iw = face.imageWidth;
   const ih = face.imageHeight;

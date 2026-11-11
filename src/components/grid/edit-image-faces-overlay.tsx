@@ -187,15 +187,16 @@ export function EditImageFacesOverlay({
       {addFaceMode &&
       addFaceRectConfirmed &&
       draftDisplayRect &&
-      displayRectIsUsable(draftDisplayRect) ? (
-        <div
-          className="pointer-events-none absolute border-2 border-primary shadow-[0_0_0_1px_rgba(0,0,0,0.75)]"
-          style={{
-            left: draftDisplayRect.x,
-            top: draftDisplayRect.y,
-            width: draftDisplayRect.width,
-            height: draftDisplayRect.height,
-          }}
+      displayRectIsUsable(draftDisplayRect) &&
+      faceToolsInteractive &&
+      !geometryEditingFaceId ? (
+        <DisplayRectEditor
+          layoutW={layoutW}
+          layoutH={layoutH}
+          rect={draftDisplayRect}
+          onRectChange={onDraftDisplayRectChange}
+          active
+          mode="edit"
         />
       ) : null}
 

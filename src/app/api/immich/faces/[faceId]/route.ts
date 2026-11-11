@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   assignFaceToPerson,
+  deleteFaceForce,
   nameUnassignedFace,
   unlinkFaceFromPerson,
 } from "@/lib/immich/faces";
@@ -33,14 +34,19 @@ export async function PUT(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   try {
     const { faceId } = await params;
-    await unlinkFaceFromPerson(faceId);
+    const force = new URL(request.url).searchParams.get("force") === "true";
+    if (force) {
+      await deleteFaceForce(faceId);
+    } else {
+      await unlinkFaceFromPerson(faceId);
+    }
     invalidateSharedPeopleIndex();
     return new NextResponse(null, { status: 204 });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to unlink face";
+    const message = e instanceof Error ? e.message : "Failed to update face";
     return NextResponse.json({ message }, { status: 502 });
   }
 }
